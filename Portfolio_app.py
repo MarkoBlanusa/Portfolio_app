@@ -254,7 +254,38 @@ def prepare_data_for_ml(answers):
                             data[key] = value
                         break
     return data
+    
+def train_ml_model():
+    data = pd.read_csv('user_data.csv')
+    X = data.drop('risk_score', axis=1)
+    y = data['risk_score']
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2)
+    model = RandomForestRegressor(n_estimators=100, random_state=42)
+    model.fit(X_train, y_train)
+    joblib.dump(model, 'risk_assessment_model.joblib')
+    return model
 
+def calculate_risk_score_ml(answers):
+    MIN_SAMPLES = 30  # Minimum number of samples required for ML
+
+    if os.path.exists('user_data.csv'):
+        data = pd.read_csv('user_data.csv')
+        if len(data) >= MIN_SAMPLES:
+            try:
+                model = joblib.load('risk_assessment_model.joblib')
+            except:
+                model = train_ml_model()
+            
+            data = prepare_data_for_ml(answers)
+            features = pd.DataFrame([data])
+            return int(model.predict(features)[0])
+        else:
+            print(f"Using rule-based model. Need {MIN_SAMPLES - len(data)} more samples for ML.")
+    else:
+        print("No data file found. Using rule-based model.")
+
+    return calculate_risk_score_rule_based(answers)
+    
 def calculate_risk_score_rule_based(answers):
     score = 0
     weights = {
@@ -460,7 +491,7 @@ def main():
             col1, col2, col3 = st.columns([1,2,1])
             with col2:
                 if st.button("Submit", use_container_width=True):
-                    risk_score = score
+                    risk_score = calculate_risk_score_ml(st.session_state.user_answers)
                     risk_tolerance = get_risk_tolerance(risk_score)
 
                     st.session_state.results = {

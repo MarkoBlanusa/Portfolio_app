@@ -144,6 +144,11 @@ def risk_aversion_quiz():
     st.header("Risk Aversion Quiz")
     with st.form(key="quiz_form"):
         score = 0
+        # Question 0
+        q0 = st.number(
+            "What is your age?",
+            key="age",
+        )
         # Question 1
         q1 = st.radio(
             "How would you describe your investment experience?",

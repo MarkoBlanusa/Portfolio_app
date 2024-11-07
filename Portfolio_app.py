@@ -501,16 +501,12 @@ def main():
 
                     st.session_state.results = {
                         'risk_tolerance': risk_tolerance,
-                        'equity_allocation': equity_allocation,
-                        'income_allocation': income_allocation
                     }
 
                     user_data = {
                         **st.session_state.user_answers,
                         'risk_score': risk_score,
                         'risk_tolerance': risk_tolerance,
-                        'equity_allocation': equity_allocation,
-                        'income_allocation': income_allocation
                     }
 
 

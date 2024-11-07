@@ -25,7 +25,7 @@ Version 0.1 :
 
 - Type of data option (Stocks, Cryptos, Forex) : NOT IMPLEMENTED (ONLY STOCKS)
 
-- Version 0.5 :
+Version 0.5 :
 
 - Portfolio optimization
         - Max sharpe ratio optimization : IMPLEMENTED

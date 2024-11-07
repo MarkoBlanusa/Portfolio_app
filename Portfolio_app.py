@@ -145,9 +145,10 @@ def risk_aversion_quiz():
     with st.form(key="quiz_form"):
         score = 0
         # Question 0
-        q0 = st.number(
+        q0 = st.radio(
             "What is your age?",
-            key="age",
+            ("15-24", "25-34", "35-44", "45-54", "55-64"),
+            key="q0",
         )
         # Question 1
         q1 = st.radio(

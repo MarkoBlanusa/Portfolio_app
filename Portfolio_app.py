@@ -15,7 +15,7 @@ import cvxpy as cp
 import scipy.optimize as sco
 from pypfopt import EfficientFrontier, expected_returns, risk_models, CLA
 import time
-
+import altair as alt
 # -------------------------------
 # 1. Imports and Data Loading
 # -------------------------------
@@ -460,9 +460,8 @@ def main():
             col1, col2, col3 = st.columns([1,2,1])
             with col2:
                 if st.button("Submit", use_container_width=True):
-                    risk_score = calculate_risk_score_ml(st.session_state.user_answers)
+                    risk_score = score
                     risk_tolerance = get_risk_tolerance(risk_score)
-                    equity_allocation, income_allocation = get_allocation(risk_tolerance)
 
                     st.session_state.results = {
                         'risk_tolerance': risk_tolerance,

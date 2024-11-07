@@ -147,7 +147,7 @@ def risk_aversion_quiz():
         # Question 0
         q0 = st.radio(
             "What is your age?",
-            ("15-24", "25-34", "35-44", "45-54", "55-64"),
+            ("0-29", "30-44", "45-65", "66+"),
             key="q0",
         )
         # Question 1
@@ -201,6 +201,12 @@ def risk_aversion_quiz():
     if submit_quiz:
         # Scoring
         score += {
+            "0-29": 1,
+            "30-44": 2,
+            "45-65": 3,
+            "66+": 4,
+        }[q0]
+        score += {
             "No experience": 1,
             "Some experience": 2,
             "Experienced": 3,
@@ -232,7 +238,7 @@ def risk_aversion_quiz():
         }[q5]
 
         # Calculate risk aversion
-        risk_aversion = (25 - score) / 10  # Higher score indicates lower risk aversion
+        risk_aversion = (29 - score) / 10  # Higher score indicates lower risk aversion
         st.write("Your risk aversion score is:", score)
         st.write("Estimated risk aversion coefficient:", risk_aversion)
         st.session_state["risk_aversion"] = risk_aversion

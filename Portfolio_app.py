@@ -666,7 +666,7 @@ def get_current_params():
         "include_risk_free_asset": include_risk_free_asset,
         "risk_free_rate": risk_free_rate,
         # Include risk_aversion if it can change
-        "risk_aversion": risk_tolerance,
+        "risk_aversion": score,
     }
     return params
 
@@ -1697,7 +1697,7 @@ if st.button("Run Optimization"):
             leverage_limit_value,
             risk_free_rate,
             include_risk_free_asset,
-            risk_tolerance,
+            score,
         )
     )
     weights = pd.Series(tangency_result.x, index=assets)
@@ -1721,7 +1721,7 @@ if st.button("Run Optimization"):
 
         # Calculate allocation between risk-free asset and tangency portfolio
         allocation_tangency = (portfolio_return - risk_free_rate) / (
-            risk_tolerance * (portfolio_volatility**2)
+            score * (portfolio_volatility**2)
         )
         allocation_tangency = min(max(allocation_tangency, 0), sum(weights))
         allocation_risk_free = max(sum(weights) - allocation_tangency, 0)

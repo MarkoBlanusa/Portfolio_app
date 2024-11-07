@@ -16,6 +16,11 @@ import scipy.optimize as sco
 from pypfopt import EfficientFrontier, expected_returns, risk_models, CLA
 import time
 import altair as alt
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestRegressor
+import joblib
+import os
+import hashlib
 # -------------------------------
 # 1. Imports and Data Loading
 # -------------------------------

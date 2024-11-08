@@ -547,6 +547,14 @@ if __name__ == "__main__":
     main()
     close_db_connection()
 
+# After quiz completion, calculate the risk score and save it in session state
+if st.button("Submit Quiz"):
+    score = calculate_risk_score_ml(st.session_state.user_answers)
+    st.session_state['risk_aversion'] = score  # Store in session state
+
+    # Display results
+    risk_tolerance = get_risk_tolerance(score)
+    display_summary(st.session_state.user_answers, risk_tolerance)
 
 # -------------------------------
 # 3. Constraints Selection and Parameters
@@ -666,7 +674,7 @@ def get_current_params():
         "include_risk_free_asset": include_risk_free_asset,
         "risk_free_rate": risk_free_rate,
         # Include risk_aversion if it can change
-        "risk_aversion": score,
+        "risk_aversion": st.session_state['risk_aversion'],
     }
     return params
 
@@ -1697,7 +1705,7 @@ if st.button("Run Optimization"):
             leverage_limit_value,
             risk_free_rate,
             include_risk_free_asset,
-            score,
+            st.session_state['risk_aversion'],
         )
     )
     weights = pd.Series(tangency_result.x, index=assets)
@@ -1721,7 +1729,7 @@ if st.button("Run Optimization"):
 
         # Calculate allocation between risk-free asset and tangency portfolio
         allocation_tangency = (portfolio_return - risk_free_rate) / (
-            score * (portfolio_volatility**2)
+            st.session_state['risk_aversion'] * (portfolio_volatility**2)
         )
         allocation_tangency = min(max(allocation_tangency, 0), sum(weights))
         allocation_risk_free = max(sum(weights) - allocation_tangency, 0)

@@ -143,6 +143,47 @@ assets = data.columns.tolist()
 # 2. Risk Aversion Quiz
 # -------------------------------
 
+# Global database connection
+conn = sqlite3.connect('user_profiles.db')
+c = conn.cursor()
+
+# Database setup
+def setup_database():
+    global conn, c
+    
+    # Create table if not exists
+    c.execute('''CREATE TABLE IF NOT EXISTS user_profiles
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  name_hash TEXT,
+                  age INTEGER,
+                  income REAL,
+                  dependents INTEGER,
+                  investment_experience TEXT,
+                  risk_score INTEGER,
+                  risk_tolerance TEXT,
+                  equity_allocation INTEGER,
+                  income_allocation INTEGER)''')
+
+    # Add the new column if it doesn't exist
+    c.execute("PRAGMA table_info(user_profiles)")
+    columns = [column[1] for column in c.fetchall()]
+    if 'name_hash' not in columns:
+        c.execute("ALTER TABLE user_profiles ADD COLUMN name_hash TEXT")
+
+    setup_feedback_table()
+
+    conn.commit()
+
+def setup_feedback_table():
+    global conn, c
+    c.execute('''CREATE TABLE IF NOT EXISTS user_feedback
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  feedback TEXT,
+                  timestamp DATETIME DEFAULT CURRENT_TIMESTAMP)''')
+    conn.commit()
+
+# Call setup_database at the start of your script
+setup_database()
 
 # Risk aversion quiz using a form
 # Risk assessment questions

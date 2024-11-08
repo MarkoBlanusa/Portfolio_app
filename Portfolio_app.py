@@ -21,6 +21,7 @@ from sklearn.ensemble import RandomForestRegressor
 import joblib
 import os
 import hashlib
+import sqlite3
 # -------------------------------
 # 1. Imports and Data Loading
 # -------------------------------

@@ -115,7 +115,7 @@ if "current_page" not in st.session_state:
 
 data = pd.read_csv("Cleaned_df.csv", index_col="Date")
 static_data = pd.read_excel(
-    r"C:\Users\marko\OneDrive\Bureau\Marko_documents\Etudes\Master_2ème\1er_semestre\Quantitative Risk and Asset Management 2\Projet_PortfolioOptimization\Data\Static.xlsx"
+    r"C:\Users\aleks\Downloads\Static.xlsx"
 )
 assets = data.columns.tolist()
 

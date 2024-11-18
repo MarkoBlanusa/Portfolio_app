@@ -109,18 +109,140 @@ import time
 # monthly_returns.to_csv("Cleaned_df_returns.csv", index=True)
 
 
-# Initialize current page in session state
-if "current_page" not in st.session_state:
-    st.session_state["current_page"] = "Quiz"
+# Function to load and process carbon data
+def load_and_process_carbon_data(file_path, scope_name):
+    df = pd.read_excel(file_path)
+    # Remove rows where ISIN is missing
+    df = df[df["ISIN"].notna()]
+    # Replace '#NA' with np.nan
+    df = df.replace("#NA", np.nan)
+    # Extract the years columns
+    years_cols = df.columns[2:]  # Assuming 'ISIN' and 'NAME' are the first two columns
+    # Convert years columns to numeric
+    df[years_cols] = df[years_cols].apply(pd.to_numeric, errors="coerce")
+    # Remove columns where all values are NaN in the year columns
+    df = df.dropna(axis=1, how="all", subset=years_cols)
+    # Rename the year columns to include the scope name
+    df.rename(
+        columns={year: f"{scope_name}_{year}" for year in years_cols}, inplace=True
+    )
+    return df
 
-data = pd.read_csv("Cleaned_df.csv", index_col="Date")
-static_data = pd.read_excel(
-    r"C:\Users\marko\OneDrive\Bureau\Marko_documents\Etudes\Master_2ème\1er_semestre\Quantitative Risk and Asset Management 2\Projet_PortfolioOptimization\Data\Static.xlsx"
-)
+
+# Function to load carbon footprint data from Excel files
+def load_carbon_data():
+    # Paths to the carbon footprint Excel files
+    scope_files = {
+        "TC_Scope1": "Data/TC_Scope1.xlsx",
+        "TC_Scope2": "Data/TC_Scope2.xlsx",
+        "TC_Scope3": "Data/TC_Scope3.xlsx",
+    }
+
+    intensity_files = {
+        "TC_Scope1Intensity": "Data/TC_Scope1Intensity.xlsx",
+        "TC_Scope2Intensity": "Data/TC_Scope2Intensity.xlsx",
+        "TC_Scope3Intensity": "Data/TC_Scope3Intensity.xlsx",
+    }
+
+    # Load Scope emissions data
+    scope1_df = load_and_process_carbon_data(scope_files["TC_Scope1"], "TC_Scope1")
+    scope2_df = load_and_process_carbon_data(scope_files["TC_Scope2"], "TC_Scope2")
+    scope3_df = load_and_process_carbon_data(scope_files["TC_Scope3"], "TC_Scope3")
+
+    # Load Scope intensity data
+    scope1_intensity_df = load_and_process_carbon_data(
+        intensity_files["TC_Scope1Intensity"], "TC_Scope1Intensity"
+    )
+    scope2_intensity_df = load_and_process_carbon_data(
+        intensity_files["TC_Scope2Intensity"], "TC_Scope2Intensity"
+    )
+    scope3_intensity_df = load_and_process_carbon_data(
+        intensity_files["TC_Scope3Intensity"], "TC_Scope3Intensity"
+    )
+
+    # Merge the dataframes on ISIN and NAME
+    carbon_data = scope1_df.merge(scope2_df, on=["ISIN", "NAME"], how="outer")
+    carbon_data = carbon_data.merge(scope3_df, on=["ISIN", "NAME"], how="outer")
+    carbon_data = carbon_data.merge(
+        scope1_intensity_df, on=["ISIN", "NAME"], how="outer"
+    )
+    carbon_data = carbon_data.merge(
+        scope2_intensity_df, on=["ISIN", "NAME"], how="outer"
+    )
+    carbon_data = carbon_data.merge(
+        scope3_intensity_df, on=["ISIN", "NAME"], how="outer"
+    )
+
+    return carbon_data
+
+
+# Initialize data
+@st.cache_data
+def initialize_data():
+    static_data = pd.read_excel("Data/Static.xlsx")
+
+    carbon_data = load_carbon_data()
+
+    # Merge static_data with carbon_data on ISIN
+    static_data = pd.merge(static_data, carbon_data, on="ISIN", how="left")
+
+    data = pd.read_csv("Cleaned_df.csv", index_col="Date")
+    data.index = pd.to_datetime(data.index)
+    return static_data, data
+
+
+static_data, data = initialize_data()
+
+
 assets = data.columns.tolist()
 
 
+def initialize_session_state():
+    pages = ["Quiz", "Data Visualization", "Optimization", "Efficient Frontier"]
+    if "current_page" not in st.session_state:
+        st.session_state["current_page"] = "Quiz"
+
+    # Filters
+    if "selected_regions" not in st.session_state:
+        st.session_state["selected_regions"] = []
+    if "selected_sectors" not in st.session_state:
+        st.session_state["selected_sectors"] = []
+    if "selected_countries" not in st.session_state:
+        st.session_state["selected_countries"] = []
+    if "selected_companies" not in st.session_state:
+        st.session_state["selected_companies"] = []
+    if "carbon_footprint" not in st.session_state:
+        st.session_state["carbon_footprint"] = False
+    if "carbon_limit" not in st.session_state:
+        st.session_state["carbon_limit"] = None
+    if "selected_carbon_scopes" not in st.session_state:
+        st.session_state["selected_carbon_scopes"] = []
+    if "selected_year" not in st.session_state:
+        st.session_state["selected_year"] = "2021"  # Default to the latest year
+
+    # Optimization
+    if "optimization_run" not in st.session_state:
+        st.session_state["optimization_run"] = False
+    if "weights" not in st.session_state:
+        st.session_state["weights"] = None
+    if "mean_returns" not in st.session_state:
+        st.session_state["mean_returns"] = None
+    if "cov_matrix" not in st.session_state:
+        st.session_state["cov_matrix"] = None
+    if "previous_params" not in st.session_state:
+        st.session_state["previous_params"] = None
+
+    # Efficient Frontier
+    if "efficient_frontier_run" not in st.session_state:
+        st.session_state["efficient_frontier_run"] = False
+
+
+# Initialize session state
+initialize_session_state()
+
+
 def main():
+    # Initialize current page in session state
     if st.session_state["current_page"] == "Quiz":
         risk_aversion_quiz()
     elif st.session_state["current_page"] == "Data Visualization":
@@ -299,26 +421,81 @@ def risk_aversion_quiz():
         st.header("Demographic Information (Scored)")
 
         # Q14. Gender
-        q14_gender = st.selectbox("14. What is your gender?", ["Male", "Female", "Other"], key="q14")
+        q14_gender = st.selectbox(
+            "14. What is your gender?", ["Male", "Female", "Other"], key="q14"
+        )
 
         # Q15. Age
-        q15_age = st.number_input("15. What is your current age in years?", min_value=0, max_value=120, key="q15")
+        q15_age = st.number_input(
+            "15. What is your current age in years?",
+            min_value=0,
+            max_value=120,
+            key="q15",
+        )
 
         # Q16. Marital Status
-        q16_marital_status = st.selectbox("16. What is your marital status?", ["Single", "Living with significant other", "Married", "Separated/Divorced", "Widowed", "Shared living arrangement"], key="q16")
+        q16_marital_status = st.selectbox(
+            "16. What is your marital status?",
+            [
+                "Single",
+                "Living with significant other",
+                "Married",
+                "Separated/Divorced",
+                "Widowed",
+                "Shared living arrangement",
+            ],
+            key="q16",
+        )
 
         # Q17. Education
-        q17_education = st.selectbox("17. What is the highest level of education you have completed?", ["Associate's degree or less", "Some college", "High school diploma", "Some high school or less", "Bachelor's degree", "Graduate or professional degree"], key="q17")
+        q17_education = st.selectbox(
+            "17. What is the highest level of education you have completed?",
+            [
+                "Associate's degree or less",
+                "Some college",
+                "High school diploma",
+                "Some high school or less",
+                "Bachelor's degree",
+                "Graduate or professional degree",
+            ],
+            key="q17",
+        )
 
         # Q18. Household Income
-        q18_income = st.selectbox("18. What is your household's approximate annual gross income before taxes?", ["Less than $25,000", "$25,000 - $49,999", "$50,000 - $74,999", "$75,000 - $99,999", "$100,000 or more"], key="q18")
+        q18_income = st.selectbox(
+            "18. What is your household's approximate annual gross income before taxes?",
+            [
+                "Less than $25,000",
+                "$25,000 - $49,999",
+                "$50,000 - $74,999",
+                "$75,000 - $99,999",
+                "$100,000 or more",
+            ],
+            key="q18",
+        )
 
         # Q19. Investment Allocation
-        st.write("Approximately what percentage of your personal and retirement savings and investments are in the following categories? (Total must be 100%)")
-        q19_cash = st.number_input("Cash (e.g., savings accounts, CDs)", min_value=0, max_value=100, key="q19_cash")
-        q19_bonds = st.number_input("Fixed income (e.g., bonds)", min_value=0, max_value=100, key="q19_bonds")
-        q19_equities = st.number_input("Equities (e.g., stocks)", min_value=0, max_value=100, key="q19_equities")
-        q19_other = st.number_input("Other (e.g., gold, collectibles)", min_value=0, max_value=100, key="q19_other")
+        st.write(
+            "Approximately what percentage of your personal and retirement savings and investments are in the following categories? (Total must be 100%)"
+        )
+        q19_cash = st.number_input(
+            "Cash (e.g., savings accounts, CDs)",
+            min_value=0,
+            max_value=100,
+            key="q19_cash",
+        )
+        q19_bonds = st.number_input(
+            "Fixed income (e.g., bonds)", min_value=0, max_value=100, key="q19_bonds"
+        )
+        q19_equities = st.number_input(
+            "Equities (e.g., stocks)", min_value=0, max_value=100, key="q19_equities"
+        )
+        q19_other = st.number_input(
+            "Other (e.g., gold, collectibles)",
+            min_value=0,
+            max_value=100,
+            key="q19_other",
+        )
 
         # Ensure the total percentages sum to 100%
         total_allocation = q19_cash + q19_bonds + q19_equities + q19_other
@@ -326,7 +503,15 @@ def risk_aversion_quiz():
             st.error("The total allocation percentages must sum to 100%.")
 
         # Q20. Investment Decision-Making
-        q20_decision_maker = st.selectbox("20. Who is responsible for investment allocation decisions in your household?", ["I make my own investment decisions", "I rely on the advice of a professional", "I do not have investment assets"], key="q20")
+        q20_decision_maker = st.selectbox(
+            "20. Who is responsible for investment allocation decisions in your household?",
+            [
+                "I make my own investment decisions",
+                "I rely on the advice of a professional",
+                "I do not have investment assets",
+            ],
+            key="q20",
+        )
 
         submit_quiz = st.form_submit_button("Submit Quiz")
 
@@ -467,7 +652,7 @@ def risk_aversion_quiz():
             "Living with significant other": 1.09,
             "Married": 1.36,
             "Shared living arrangement": 1.60,
-            "Separated/Divorced": 0.75  # Assuming an average point
+            "Separated/Divorced": 0.75,  # Assuming an average point
         }
         score_demographic += marital_points.get(q16_marital_status, 0)
 
@@ -478,7 +663,7 @@ def risk_aversion_quiz():
             "High school diploma": 0.64,
             "Some high school or less": 0.87,
             "Bachelor's degree": 2.36,
-            "Graduate or professional degree": 2.96
+            "Graduate or professional degree": 2.96,
         }
         score_demographic += education_points.get(q17_education, 0)
 
@@ -488,7 +673,7 @@ def risk_aversion_quiz():
             "$25,000 - $49,999": 0,
             "$50,000 - $74,999": 1.25,
             "$75,000 - $99,999": 2.03,
-            "$100,000 or more": 3.73
+            "$100,000 or more": 3.73,
         }
         score_demographic += income_points.get(q18_income, 0)
 
@@ -504,7 +689,7 @@ def risk_aversion_quiz():
         decision_points = {
             "Do not have investment assets": 0,
             "Rely on the advice of a professional": 1.85,
-            "I make my own investment decisions": 2.03
+            "I make my own investment decisions": 2.03,
         }
         score_demographic += decision_points.get(q20_decision_maker, 0)
 
@@ -514,19 +699,25 @@ def risk_aversion_quiz():
         # Risk Aversion Calculation
         S_min = 13  # Minimum possible total score
         S_max = 67  # Updated maximum possible total score
-        A_min = 1   # Lowest risk aversion coefficient
+        A_min = 1  # Lowest risk aversion coefficient
         A_max = 10  # Highest risk aversion coefficient
 
         proportion = (total_score - S_min) / (S_max - S_min)
         risk_aversion = A_max - proportion * (A_max - A_min)
 
         # Categorize Risk Tolerance into 5 Levels
-        categories = ["Very Low Risk Tolerance", "Low Risk Tolerance", "Moderate Risk Tolerance", "High Risk Tolerance", "Very High Risk Tolerance"]
+        categories = [
+            "Very Low Risk Tolerance",
+            "Low Risk Tolerance",
+            "Moderate Risk Tolerance",
+            "High Risk Tolerance",
+            "Very High Risk Tolerance",
+        ]
         category_thresholds = [
             S_min + (S_max - S_min) * 0.2,  # 20%
             S_min + (S_max - S_min) * 0.4,  # 40%
             S_min + (S_max - S_min) * 0.6,  # 60%
-            S_min + (S_max - S_min) * 0.8   # 80%
+            S_min + (S_max - S_min) * 0.8,  # 80%
         ]
 
         if total_score <= category_thresholds[0]:
@@ -543,11 +734,14 @@ def risk_aversion_quiz():
         # Display Results and Explanations
         st.write("## Quiz Results")
         st.write(f"Your total score is: **{round(total_score, 2)}** out of {S_max}")
-        st.write(f"Your estimated risk aversion coefficient is: **{round(risk_aversion, 2)}**")
+        st.write(
+            f"Your estimated risk aversion coefficient is: **{round(risk_aversion, 2)}**"
+        )
         st.write(f"Your risk tolerance category is: **{risk_category}**")
 
         st.write("### Explanation")
-        st.write("""
+        st.write(
+            """
         The risk aversion coefficient is calculated based on your total score from the quiz. The quiz assesses your willingness to take financial risks using the Grable & Lytton method, which considers various factors such as your financial attitudes, behaviors, demographics, and actual investment allocations.
 
         Each question in the quiz is scored according to its statistical impact on risk tolerance, derived from empirical research findings. For example:
@@ -586,7 +780,8 @@ def risk_aversion_quiz():
         Based on your risk tolerance category and risk aversion coefficient, we can proceed to design an investment portfolio that aligns with your preferences. The mean-variance optimization model will utilize your risk aversion coefficient to recommend an optimal asset allocation.
 
         Feel free to explore the data visualization page to see how different portfolios perform and to adjust your preferences as needed.
-        """)
+        """
+        )
 
         # Store the risk aversion in session state
         st.session_state["risk_aversion"] = risk_aversion
@@ -619,10 +814,10 @@ def data_visualization_page():
     visualize_dataset()
 
 
-def visualize_dataset(top_n_countries=10):
+def visualize_dataset(top_n_countries=15):
     """
     Visualize dataset with descriptive statistics and meaningful interactive graphs.
-    
+
     Parameters:
     - data (pd.DataFrame): The dataset to visualize.
     - top_n_countries (int): Number of top countries to display in the country distribution plot.
@@ -641,24 +836,50 @@ def visualize_dataset(top_n_countries=10):
                                   'ISIN', 'Region', 'GICSSectorName', and 'Country' columns.
     - top_n_countries (int): Number of top countries to display in the country distribution plot.
     """
-    # Ensure 'ISIN' is in static_data
-    required_columns = {'ISIN', 'Region', 'GICSSectorName', 'Country'}
+
+    # Display explanatory text about carbon concepts
+    st.markdown(
+        """
+    ## Understanding Carbon Metrics
+    
+    **Carbon Emissions** refer to the release of carbon dioxide (CO₂) and other greenhouse gases into the atmosphere. These emissions are primarily generated through the burning of fossil fuels, industrial processes, and agricultural practices. They contribute significantly to climate change and global warming.
+    
+    **Carbon Intensity** measures the amount of carbon emissions produced per unit of activity, such as per unit of revenue, production, or energy consumed. It provides insight into how efficiently a company manages its carbon emissions relative to its operational scale.
+    
+    **Carbon Scopes** categorize carbon emissions based on their sources:
+    
+    - **Scope 1:** Direct emissions from owned or controlled sources, such as company vehicles or on-site fuel combustion.
+    - **Scope 2:** Indirect emissions from the generation of purchased energy, like electricity, steam, heating, and cooling.
+    - **Scope 3:** All other indirect emissions that occur in a company's value chain, including both upstream and downstream emissions (e.g., business travel, waste disposal, product use).
+    
+    Understanding these metrics helps in assessing a company's environmental impact and in making informed investment decisions aligned with sustainability goals.
+    """
+    )
+
+    # Ensure required columns are in static_data
+    required_columns = {
+        "ISIN",
+        "Region",
+        "GICSSectorName",
+        "Country",
+        "Company",
+    }
     if not required_columns.issubset(static_data.columns):
         st.error(f"static_data must contain the following columns: {required_columns}")
         return
-    
+
     # Extract list of ISINs from the data
     data_isins = data_to_visualize.columns.tolist()
-    
+
     # Filter static_data to include only ISINs present in data
-    static_filtered = static_data[static_data['ISIN'].isin(data_isins)]
-    
+    static_filtered = static_data[static_data["ISIN"].isin(data_isins)]
+
     if static_filtered.empty:
         st.warning("No matching ISINs found in static_data for the filtered dataset.")
         return
-    
+
     # Map ISIN to Company Name
-    isin_to_company = static_filtered.set_index('ISIN')['Company'].to_dict()
+    isin_to_company = static_filtered.set_index("ISIN")["Company"].to_dict()
 
     # Rename the columns of data_to_visualize from ISINs to Company names
     data_to_visualize = data_to_visualize.rename(columns=isin_to_company)
@@ -670,19 +891,19 @@ def visualize_dataset(top_n_countries=10):
     # static_filtered['Company'] = data_to_visualize.columns  # Removed
 
     # Ensure that 'Company' column in static_filtered matches the renamed data_to_visualize
-    static_filtered = static_filtered[static_filtered['Company'].isin(data_to_visualize.columns)]
+    static_filtered = static_filtered[
+        static_filtered["Company"].isin(data_to_visualize.columns)
+    ]
 
-    
     # # Calculate descriptive statistics
     # st.subheader("Descriptive Statistics")
     # st.dataframe(data_to_visualize.describe())
-    
-    
+
     # # Correlation Matrix and Interactive Heatmap
     # st.subheader("Correlation Matrix")
     # corr_matrix = data_to_visualize.corr()
     # st.dataframe(corr_matrix)
-    
+
     # st.subheader("Correlation Heatmap")
     # fig_corr = px.imshow(corr_matrix,
     #                      text_auto=True,
@@ -691,78 +912,348 @@ def visualize_dataset(top_n_countries=10):
     #                      labels=dict(color="Correlation"))
     # fig_corr.update_layout(width=800, height=600)
     # st.plotly_chart(fig_corr, use_container_width=True)
-    
+
     # Create tabs for categorical distributions
-    tab1, tab2, tab3 = st.tabs(["By Region", "By Sector", "By Country"])
-    
+    tab1, tab2, tab3, tab4 = st.tabs(
+        ["By Region", "By Sector", "By Country", "Carbon Statistics"]
+    )
+
     with tab1:
         st.subheader("Percentage of Stocks by Region")
-        region_counts = static_filtered['Region'].value_counts(normalize=True) * 100
+        region_counts = static_filtered["Region"].value_counts(normalize=True) * 100
         region_df = region_counts.reset_index()
-        region_df.columns = ['Region', 'Percentage']
-        
-        fig_region = px.bar(region_df, 
-                            x='Region', 
-                            y='Percentage',
-                            text='Percentage',
-                            title='Distribution of Stocks by Region',
-                            labels={'Percentage': 'Percentage (%)'},
-                            color='Percentage',
-                            color_continuous_scale='viridis')
-        fig_region.update_traces(texttemplate='%{text:.1f}%', textposition='outside')
-        fig_region.update_layout(uniformtext_minsize=8, uniformtext_mode='hide',
-                                 xaxis_title="Region",
-                                 yaxis_title="Percentage (%)",
-                                 showlegend=False)
+        region_df.columns = ["Region", "Percentage"]
+
+        fig_region = px.bar(
+            region_df,
+            x="Region",
+            y="Percentage",
+            text="Percentage",
+            title="Distribution of Stocks by Region",
+            labels={"Percentage": "Percentage (%)"},
+            color="Percentage",
+            color_continuous_scale="viridis",
+        )
+        fig_region.update_traces(texttemplate="%{text:.1f}%", textposition="outside")
+        fig_region.update_layout(
+            uniformtext_minsize=8,
+            uniformtext_mode="hide",
+            xaxis_title="Region",
+            yaxis_title="Percentage (%)",
+            showlegend=False,
+        )
         st.plotly_chart(fig_region, use_container_width=True)
-    
+
     with tab2:
         st.subheader("Percentage of Stocks by Sector")
-        sector_counts = static_filtered['GICSSectorName'].value_counts(normalize=True) * 100
+        sector_counts = (
+            static_filtered["GICSSectorName"].value_counts(normalize=True) * 100
+        )
         sector_df = sector_counts.reset_index()
-        sector_df.columns = ['Sector', 'Percentage']
-        
-        fig_sector = px.bar(sector_df, 
-                            x='Sector', 
-                            y='Percentage',
-                            text='Percentage',
-                            title='Distribution of Stocks by Sector',
-                            labels={'Percentage': 'Percentage (%)'},
-                            color='Percentage',
-                            color_continuous_scale='magma')
-        fig_sector.update_traces(texttemplate='%{text:.1f}%', textposition='outside')
-        fig_sector.update_layout(uniformtext_minsize=8, uniformtext_mode='hide',
-                                 xaxis_title="Sector",
-                                 yaxis_title="Percentage (%)",
-                                 showlegend=False)
+        sector_df.columns = ["Sector", "Percentage"]
+
+        fig_sector = px.bar(
+            sector_df,
+            x="Sector",
+            y="Percentage",
+            text="Percentage",
+            title="Distribution of Stocks by Sector",
+            labels={"Percentage": "Percentage (%)"},
+            color="Percentage",
+            color_continuous_scale="magma",
+        )
+        fig_sector.update_traces(texttemplate="%{text:.1f}%", textposition="outside")
+        fig_sector.update_layout(
+            uniformtext_minsize=8,
+            uniformtext_mode="hide",
+            xaxis_title="Sector",
+            yaxis_title="Percentage (%)",
+            showlegend=False,
+        )
         st.plotly_chart(fig_sector, use_container_width=True)
-    
+
     with tab3:
         st.subheader(f"Percentage of Stocks by Country (Top {top_n_countries})")
-        country_counts = static_filtered['Country'].value_counts(normalize=True) * 100
+        country_counts = static_filtered["Country"].value_counts(normalize=True) * 100
         if len(country_counts) > top_n_countries:
             top_countries = country_counts.head(top_n_countries)
             other_percentage = 100 - top_countries.sum()
-            top_countries = pd.concat([top_countries, pd.Series({'Other': other_percentage})])
+            top_countries = pd.concat(
+                [top_countries, pd.Series({"Other": other_percentage})]
+            )
         else:
             top_countries = country_counts
         country_df = top_countries.reset_index()
-        country_df.columns = ['Country', 'Percentage']
-        
-        fig_country = px.bar(country_df, 
-                             x='Country', 
-                             y='Percentage',
-                             text='Percentage',
-                             title=f'Distribution of Stocks by Country (Top {top_n_countries})',
-                             labels={'Percentage': 'Percentage (%)'},
-                             color='Percentage',
-                             color_continuous_scale='RdBu')
-        fig_country.update_traces(texttemplate='%{text:.1f}%', textposition='outside')
-        fig_country.update_layout(uniformtext_minsize=8, uniformtext_mode='hide',
-                                  xaxis_title="Country",
-                                  yaxis_title="Percentage (%)",
-                                  showlegend=False)
+        country_df.columns = ["Country", "Percentage"]
+
+        fig_country = px.bar(
+            country_df,
+            x="Country",
+            y="Percentage",
+            text="Percentage",
+            title=f"Distribution of Stocks by Country (Top {top_n_countries})",
+            labels={"Percentage": "Percentage (%)"},
+            color="Percentage",
+            color_continuous_scale="RdBu",
+        )
+        fig_country.update_traces(texttemplate="%{text:.1f}%", textposition="outside")
+        fig_country.update_layout(
+            uniformtext_minsize=8,
+            uniformtext_mode="hide",
+            xaxis_title="Country",
+            yaxis_title="Percentage (%)",
+            showlegend=False,
+        )
         st.plotly_chart(fig_country, use_container_width=True)
+
+    with tab4:
+        st.subheader("Carbon Statistics")
+
+        # Sidebar for scope selection
+        st.sidebar.header("Carbon Scope and Year Selection")
+        carbon_scopes = ["Scope 1", "Scope 2", "Scope 3"]
+        scope_mapping = {
+            "Scope 1": "TC_Scope1",
+            "Scope 2": "TC_Scope2",
+            "Scope 3": "TC_Scope3",
+        }
+        intensity_mapping = {
+            "Scope 1": "TC_Scope1Intensity",
+            "Scope 2": "TC_Scope2Intensity",
+            "Scope 3": "TC_Scope3Intensity",
+        }
+
+        selected_scopes = st.sidebar.multiselect(
+            "Select Carbon Scopes to Include",
+            options=carbon_scopes,
+            default=carbon_scopes,  # Default to all scopes selected
+        )
+
+        # Add a slider to select the year
+        available_years = [str(year) for year in range(1999, 2022)]
+        selected_year = st.sidebar.selectbox(
+            "Select Year for Carbon Data",
+            options=available_years,
+            index=len(available_years) - 1,
+        )  # default to the latest year
+
+        # Update session state
+        st.session_state["selected_year"] = selected_year
+
+        # Filter based on selected scopes
+        if selected_scopes:
+            selected_scope_cols = [
+                f"{scope_mapping[scope]}_{selected_year}" for scope in selected_scopes
+            ]
+            selected_intensity_cols = [
+                f"{intensity_mapping[scope]}_{selected_year}"
+                for scope in selected_scopes
+            ]
+
+            static_filtered["Selected_Scopes_Emission"] = static_filtered[
+                selected_scope_cols
+            ].sum(axis=1)
+            static_filtered["Selected_Scopes_Intensity"] = static_filtered[
+                selected_intensity_cols
+            ].mean(axis=1)
+        else:
+            static_filtered["Selected_Scopes_Emission"] = 0
+            static_filtered["Selected_Scopes_Intensity"] = 0
+
+        # Average Carbon Intensity by Sector
+        st.markdown("### Average Carbon Intensity by Sector")
+        intensity_by_sector = (
+            static_filtered.groupby("GICSSectorName")["Selected_Scopes_Intensity"]
+            .mean()
+            .reset_index()
+        )
+
+        fig_intensity_sector = px.bar(
+            intensity_by_sector,
+            x="GICSSectorName",
+            y="Selected_Scopes_Intensity",
+            text="Selected_Scopes_Intensity",
+            title="Average Carbon Intensity by Sector",
+            labels={
+                "Selected_Scopes_Intensity": "Average Carbon Intensity (Metric Tons per Unit)",
+                "GICSSectorName": "Sector",
+            },
+            color="Selected_Scopes_Intensity",
+            color_continuous_scale="Blues",
+        )
+        fig_intensity_sector.update_traces(
+            texttemplate="%{text:.2f}", textposition="outside"
+        )
+        fig_intensity_sector.update_layout(
+            uniformtext_minsize=8,
+            uniformtext_mode="hide",
+            xaxis_title="Sector",
+            yaxis_title="Average Carbon Intensity (Metric Tons per Unit)",
+            showlegend=False,
+        )
+        st.plotly_chart(fig_intensity_sector, use_container_width=True)
+
+        # Distribution of Carbon Intensity
+        st.markdown("### Distribution of Carbon Intensity")
+        fig_carbon_intensity_dist = px.histogram(
+            static_filtered,
+            x="Selected_Scopes_Intensity",
+            nbins=30,
+            title="Histogram of Carbon Intensity",
+            labels={
+                "Selected_Scopes_Intensity": "Carbon Intensity (Metric Tons per Unit)"
+            },
+            color_discrete_sequence=["orange"],
+        )
+        fig_carbon_intensity_dist.update_layout(
+            showlegend=False,
+            xaxis_title="Carbon Intensity (Metric Tons per Unit)",
+            yaxis_title="Count",
+        )
+        st.plotly_chart(fig_carbon_intensity_dist, use_container_width=True)
+
+        # Carbon Intensity by Region
+        st.markdown("### Carbon Intensity by Region")
+        intensity_by_region = (
+            static_filtered.groupby("Region")["Selected_Scopes_Intensity"]
+            .mean()
+            .reset_index()
+        )
+
+        fig_intensity_region = px.bar(
+            intensity_by_region,
+            x="Region",
+            y="Selected_Scopes_Intensity",
+            text="Selected_Scopes_Intensity",
+            title="Average Carbon Intensity by Region",
+            labels={
+                "Selected_Scopes_Intensity": "Average Carbon Intensity (Metric Tons per Unit)",
+                "Region": "Region",
+            },
+            color="Selected_Scopes_Intensity",
+            color_continuous_scale="Greens",
+        )
+        fig_intensity_region.update_traces(
+            texttemplate="%{text:.2f}", textposition="outside"
+        )
+        fig_intensity_region.update_layout(
+            uniformtext_minsize=8,
+            uniformtext_mode="hide",
+            xaxis_title="Region",
+            yaxis_title="Average Carbon Intensity (Metric Tons per Unit)",
+            showlegend=False,
+        )
+        st.plotly_chart(fig_intensity_region, use_container_width=True)
+
+        # Carbon Emission by Region
+        st.markdown("### Carbon Emission by Region")
+        emission_by_region = (
+            static_filtered.groupby("Region")["Selected_Scopes_Emission"]
+            .sum()
+            .reset_index()
+        )
+
+        fig_emission_region = px.bar(
+            emission_by_region,
+            x="Region",
+            y="Selected_Scopes_Emission",
+            text="Selected_Scopes_Emission",
+            title="Total Carbon Emission by Region",
+            labels={
+                "Selected_Scopes_Emission": "Total Carbon Emission (Metric Tons)",
+                "Region": "Region",
+            },
+            color="Selected_Scopes_Emission",
+            color_continuous_scale="Reds",
+        )
+        fig_emission_region.update_traces(
+            texttemplate="%{text:.2s}", textposition="outside"
+        )
+        fig_emission_region.update_layout(
+            uniformtext_minsize=8,
+            uniformtext_mode="hide",
+            xaxis_title="Region",
+            yaxis_title="Total Carbon Emission (Metric Tons)",
+            showlegend=False,
+        )
+        st.plotly_chart(fig_emission_region, use_container_width=True)
+
+        # Distribution of Total Carbon Emission
+        st.markdown("### Distribution of Total Carbon Emission")
+        fig_total_carbon_dist = px.histogram(
+            static_filtered,
+            x="Selected_Scopes_Emission",
+            nbins=30,
+            title="Histogram of Total Carbon Emission",
+            labels={"Selected_Scopes_Emission": "Total Carbon Emission (Metric Tons)"},
+            color_discrete_sequence=["red"],
+        )
+        fig_total_carbon_dist.update_layout(
+            showlegend=False,
+            xaxis_title="Total Carbon Emission (Metric Tons)",
+            yaxis_title="Count",
+        )
+        st.plotly_chart(fig_total_carbon_dist, use_container_width=True)
+
+        # Top 10 Companies by Carbon Emission
+        st.markdown("### Top 10 Companies by Total Carbon Emission")
+        top10_emission = static_filtered.nlargest(10, "Selected_Scopes_Emission")[
+            ["Company", "Selected_Scopes_Emission"]
+        ]
+        fig_top10_emission = px.bar(
+            top10_emission,
+            x="Company",
+            y="Selected_Scopes_Emission",
+            text="Selected_Scopes_Emission",
+            title="Top 10 Companies by Total Carbon Emission",
+            labels={
+                "Selected_Scopes_Emission": "Total Carbon Emission (Metric Tons)",
+                "Company": "Company",
+            },
+            color="Selected_Scopes_Emission",
+            color_continuous_scale="YlOrRd",
+        )
+        fig_top10_emission.update_traces(
+            texttemplate="%{text:.2s}", textposition="outside"
+        )
+        fig_top10_emission.update_layout(
+            uniformtext_minsize=8,
+            uniformtext_mode="hide",
+            xaxis_title="Company",
+            yaxis_title="Total Carbon Emission (Metric Tons)",
+            showlegend=False,
+        )
+        st.plotly_chart(fig_top10_emission, use_container_width=True)
+
+        # Top 10 Companies by Carbon Intensity
+        st.markdown("### Top 10 Companies by Carbon Intensity")
+        top10_intensity = static_filtered.nlargest(10, "Selected_Scopes_Intensity")[
+            ["Company", "Selected_Scopes_Intensity"]
+        ]
+        fig_top10_intensity = px.bar(
+            top10_intensity,
+            x="Company",
+            y="Selected_Scopes_Intensity",
+            text="Selected_Scopes_Intensity",
+            title="Top 10 Companies by Carbon Intensity",
+            labels={
+                "Selected_Scopes_Intensity": "Carbon Intensity (Metric Tons per Unit)",
+                "Company": "Company",
+            },
+            color="Selected_Scopes_Intensity",
+            color_continuous_scale="Purples",
+        )
+        fig_top10_intensity.update_traces(
+            texttemplate="%{text:.2f}", textposition="outside"
+        )
+        fig_top10_intensity.update_layout(
+            uniformtext_minsize=8,
+            uniformtext_mode="hide",
+            xaxis_title="Company",
+            yaxis_title="Carbon Intensity (Metric Tons per Unit)",
+            showlegend=False,
+        )
+        st.plotly_chart(fig_top10_intensity, use_container_width=True)
 
     # ---------------------------
     # Interactive Selection Steps
@@ -771,15 +1262,18 @@ def visualize_dataset(top_n_countries=10):
     st.header("Select Companies for Additional Insights")
 
     # Step 1: Select Region(s)
-    available_regions = static_filtered['Region'].dropna().unique().tolist()
+    available_regions = static_filtered["Region"].dropna().unique().tolist()
     selected_regions = st.selectbox(
-        "Select a Region",
-        options=available_regions,
-        index=0
+        "Select a Region", options=available_regions, index=0
     )
 
     # Step 2: Select Country(s) within Selected Region
-    available_countries = static_filtered[static_filtered['Region'] == selected_regions]['Country'].dropna().unique().tolist()
+    available_countries = (
+        static_filtered[static_filtered["Region"] == selected_regions]["Country"]
+        .dropna()
+        .unique()
+        .tolist()
+    )
     selected_countries = st.multiselect(
         "Select Country/Countries",
         options=available_countries,
@@ -788,9 +1282,9 @@ def visualize_dataset(top_n_countries=10):
     # Step 3: Select Company(s) within Selected Country(s)
     if selected_countries:
         available_companies = static_filtered[
-            (static_filtered['Region'] == selected_regions) &
-            (static_filtered['Country'].isin(selected_countries))
-        ]['Company'].tolist()
+            (static_filtered["Region"] == selected_regions)
+            & (static_filtered["Country"].isin(selected_countries))
+        ]["Company"].tolist()
     else:
         available_companies = []
 
@@ -803,29 +1297,39 @@ def visualize_dataset(top_n_countries=10):
         # Verify that selected_companies are in data_to_visualize.columns
         missing_companies = set(selected_companies) - set(data_to_visualize.columns)
         if missing_companies:
-            st.error(f"The following selected companies are not present in the data: {', '.join(missing_companies)}")
+            st.error(
+                f"The following selected companies are not present in the data: {', '.join(missing_companies)}"
+            )
             st.stop()
 
         # Filter data_to_visualize to include only selected companies
         data_to_visualize = data_to_visualize[selected_companies]
         returns = returns[selected_companies]
-        
+
         # Also filter static_filtered accordingly
-        static_filtered = static_filtered[static_filtered['Company'].isin(selected_companies)]
-        
+        static_filtered = static_filtered[
+            static_filtered["Company"].isin(selected_companies)
+        ]
+
         # Update session state
         st.session_state["filtered_data"] = data_to_visualize
     else:
-        st.warning("No companies selected. Please select at least one company to view insights.")
+        st.warning(
+            "No companies selected. Please select at least one company to view insights."
+        )
         st.stop()
-    
+
     # Additional Visualizations
     st.subheader("Additional Insights")
 
     # Distribution of Numerical Variables - Interactive Histograms
     st.markdown("### Distribution of Returns")
-    numeric_columns = data_to_visualize.select_dtypes(include=np.number).columns.tolist()
-    numeric_columns_return = data_to_visualize.select_dtypes(include=np.number).columns.tolist()
+    numeric_columns = data_to_visualize.select_dtypes(
+        include=np.number
+    ).columns.tolist()
+    numeric_columns_return = data_to_visualize.select_dtypes(
+        include=np.number
+    ).columns.tolist()
 
     for col in numeric_columns_return:
         fig_hist = px.histogram(
@@ -836,13 +1340,9 @@ def visualize_dataset(top_n_countries=10):
             labels={col: col},
             opacity=0.75,
             marginal="box",
-            color_discrete_sequence=['skyblue']
+            color_discrete_sequence=["skyblue"],
         )
-        fig_hist.update_layout(
-            showlegend=False,
-            xaxis_title=col,
-            yaxis_title="Count"
-        )
+        fig_hist.update_layout(showlegend=False, xaxis_title=col, yaxis_title="Count")
         st.plotly_chart(fig_hist, use_container_width=True)
 
     # Box Plots of Numerical Variables - Interactive
@@ -854,12 +1354,9 @@ def visualize_dataset(top_n_countries=10):
             points="all",
             title=f"Box Plot of {col}",
             labels={col: col},
-            color_discrete_sequence=['lightgreen']
+            color_discrete_sequence=["lightgreen"],
         )
-        fig_box.update_layout(
-            showlegend=False,
-            yaxis_title=col
-        )
+        fig_box.update_layout(showlegend=False, yaxis_title=col)
         st.plotly_chart(fig_box, use_container_width=True)
 
     # Pairwise Relationships - Interactive Scatter Matrix
@@ -873,7 +1370,7 @@ def visualize_dataset(top_n_countries=10):
             dimensions=numeric_columns_return,
             title="Scatter Matrix of Returns",
             labels={col: col for col in numeric_columns},
-            height=800
+            height=800,
             # Removed 'color' parameter to prevent length mismatch
         )
         scatter_matrix.update_layout(showlegend=False)
@@ -900,13 +1397,11 @@ def visualize_dataset(top_n_countries=10):
                 x=date_col,
                 y=col,
                 title=f"Trend of {col} Over Time",
-                labels={'x': 'Date', col: col},
-                markers=True
+                labels={"x": "Date", col: col},
+                markers=True,
             )
             fig_line.update_layout(
-                showlegend=False,
-                xaxis_title="Date",
-                yaxis_title=col
+                showlegend=False, xaxis_title="Date", yaxis_title=col
             )
             st.plotly_chart(fig_line, use_container_width=True)
 
@@ -918,13 +1413,11 @@ def visualize_dataset(top_n_countries=10):
                 x=date_col_return,
                 y=col,
                 title=f"Trend of {col} Over Time",
-                labels={'x': 'Date', col: col},
-                markers=True
+                labels={"x": "Date", col: col},
+                markers=True,
             )
             fig_line.update_layout(
-                showlegend=False,
-                xaxis_title="Date",
-                yaxis_title=col
+                showlegend=False, xaxis_title="Date", yaxis_title=col
             )
             st.plotly_chart(fig_line, use_container_width=True)
 
@@ -968,18 +1461,10 @@ def optimization_page():
         "Inverse Volatility Portfolio",
     ]
     selected_objective = st.selectbox("Select an objective function", objectives)
+    st.session_state["selected_objective"] = selected_objective
 
     # After selecting the objective, display specific constraints
-    if selected_objective == "Maximum Sharpe Ratio Portfolio":
-        display_constraints()
-    elif selected_objective == "Minimum Global Variance Portfolio":
-        display_constraints()
-    elif selected_objective == "Maximum Diversification Portfolio":
-        display_constraints()
-    elif selected_objective == "Equally Weighted Risk Contribution Portfolio":
-        display_constraints()
-    elif selected_objective == "Inverse Volatility Portfolio":
-        display_constraints()
+    adjusted_constraints = display_constraints()
 
     # Get current parameters
     current_params = get_current_params()
@@ -992,13 +1477,22 @@ def optimization_page():
     # Update previous parameters
     st.session_state["previous_params"] = current_params
 
-    # Apply filtering
+    # Apply filtering using adjusted constraints
     data_filtered = filter_stocks(
         data,
-        regions=selected_regions,
-        sectors=selected_sectors,
-        countries=selected_countries,
+        regions=adjusted_constraints.get("selected_regions", []),
+        sectors=adjusted_constraints.get("selected_sectors", []),
+        countries=adjusted_constraints.get("selected_countries", []),
+        carbon_footprint=adjusted_constraints.get("carbon_footprint", False),
+        carbon_limit=adjusted_constraints.get("carbon_limit", None),
+        selected_carbon_scopes=adjusted_constraints.get("selected_carbon_scopes", []),
+        selected_year=adjusted_constraints.get("selected_year", None),
     )
+
+    # Check if data_filtered is empty
+    if data_filtered.empty:
+        st.warning("No stocks available after applying the selected filters.")
+        st.stop()
 
     st.session_state["filtered_data"] = data_filtered
 
@@ -1007,9 +1501,37 @@ def optimization_page():
 
     # Run optimization when ready
     if st.button("Run Optimization"):
-        run_optimization(selected_objective)
+        run_optimization(selected_objective, adjusted_constraints)
     else:
         st.write('Click "Run Optimization" to compute the optimized portfolio.')
+
+    # Check if optimization was successful
+    if st.session_state["optimization_run"] == True:
+        st.success("Optimization completed successfully.")
+        # Provide download button
+        st.subheader("Download Optimized Weights")
+        weights = st.session_state["weights"]
+        mean_returns = st.session_state["mean_returns"]
+        # Prepare the DataFrame
+        weights_percent = weights
+        df_weights = pd.DataFrame(
+            {"ISIN": mean_returns.index.tolist(), "Weight (%)": weights_percent}
+        )
+        # Map ISINs to company names
+        df_weights = df_weights.merge(
+            static_data[["ISIN", "Company"]], on="ISIN", how="left"
+        )
+        # Rearrange columns
+        df_weights = df_weights[["ISIN", "Company", "Weight (%)"]]
+        # Convert DataFrame to CSV
+        csv = df_weights.to_csv(index=False)
+        # Provide download button
+        st.download_button(
+            label="Download Optimized Weights as CSV",
+            data=csv,
+            file_name="optimized_weights.csv",
+            mime="text/csv",
+        )
 
     # Compute and show the efficient frontier once the optimization of the selected objective is done
     if st.session_state["optimization_run"] == True:
@@ -1027,20 +1549,51 @@ def optimization_page():
     # Option to review the quiz
     if st.button("Return to Quiz"):
         st.session_state["current_page"] = "Quiz"
-        st.rerun() 
+        st.rerun()
 
 
 # -------------------------------
 # 4. Efficient Frontier Page
 # -------------------------------
 
+
 def efficient_frontier_page():
     st.title("Efficient Frontier")
+
+    # Use filtered data if available
+    if "filtered_data" in st.session_state:
+        data_to_use = st.session_state["filtered_data"]
+    else:
+        data_to_use = data
+
+    # Handle navigation buttons before heavy computations
+    nav_return_quiz = st.button("Return to Quiz", key="ef_return_quiz_top")
+    nav_view_visualization = st.button(
+        "View Filtered Data Visualization", key="ef_view_visualization_top"
+    )
+    nav_return_optimization = st.button(
+        "Return to Optimization", key="ef_return_optimization_top"
+    )
+
+    if nav_return_quiz:
+        st.session_state["current_page"] = "Quiz"
+        st.rerun()
+    if nav_view_visualization:
+        st.session_state["current_page"] = "Data Visualization"
+        st.rerun()
+    if nav_return_optimization:
+        st.session_state["current_page"] = "Optimization"
+        st.rerun()
+
+    # Check if optimization has been run
+    if not st.session_state.get("optimization_run", False):
+        st.warning("Please run the optimization first.")
+        st.stop()
 
     # Initialize session state variables
     if "efficient_frontier_run" not in st.session_state:
         st.session_state["efficient_frontier_run"] = False
-    
+
     # Retrieve necessary variables from session state
     weights = st.session_state["weights"]
     mean_returns = st.session_state["mean_returns"]
@@ -1051,12 +1604,31 @@ def efficient_frontier_page():
     include_risk_free_asset = st.session_state["include_risk_free_asset"]
     long_only = st.session_state["long_only"]
     leverage_limit = st.session_state["leverage_limit"]
-    leverage_limit_value = st.session_state["leverage_limit_value"]
+    leverage_limit_value = st.session_state.get("leverage_limit_value")
+    # st.write(f"Leverage limit value from efficient page : {leverage_limit_value}")
+    leverage_limit_constraint_type = st.session_state.get(
+        "leverage_limit_constraint_type", "Inequality constraint"
+    )
+    net_exposure = st.session_state["net_exposure"]
+    net_exposure_value = st.session_state.get("net_exposure_value")
+    net_exposure_constraint_type = st.session_state.get(
+        "net_exposure_constraint_type", "Inequality constraint"
+    )
     min_weight_value = st.session_state["min_weight_value"]
     max_weight_value = st.session_state["max_weight_value"]
 
+    # Retrieve efficient frontier data from session state
+    frontier_returns = st.session_state.get("frontier_returns")
+    frontier_volatility = st.session_state.get("frontier_volatility")
+    frontier_weights = st.session_state.get("frontier_weights")
+
+    if weights is None or mean_returns is None or cov_matrix is None:
+        st.warning("Optimization data is missing. Please run the optimization again.")
+        st.stop()
+
     num_assets = len(mean_returns)
-    weights_optimal = weights.values
+    # weights_optimal = weights.values
+    weights_optimal = pd.Series(weights, index=data_to_use.columns)
 
     plot_efficient_frontier(
         mean_returns,
@@ -1067,29 +1639,253 @@ def efficient_frontier_page():
         long_only,
         leverage_limit,
         leverage_limit_value,
+        leverage_limit_constraint_type,
+        net_exposure,
+        net_exposure_value,
+        net_exposure_constraint_type,
         min_weight_value,
         max_weight_value,
+        frontier_returns=frontier_returns,
+        frontier_volatility=frontier_volatility,
+        frontier_weights=frontier_weights,
     )
-    
-    st.session_state["efficient_frontier_run"] = True
 
-    # Option to proceed to Optimization
-    if st.button("Return to Optimization"):
-        st.session_state["efficient_frontier_run"] = False
-        st.session_state["current_page"] = "Optimization"
-        st.rerun()
+    # After plotting the efficient frontier, plot the additional graphs
+    st.header("Optimized Portfolio Statistics")
 
-    # Option to view filtered data visualization
-    if st.button("View Filtered Data Visualization"):
-        st.session_state["efficient_frontier_run"] = False
-        st.session_state["current_page"] = "Data Visualization"
-        st.rerun()
+    # # Pie Chart of Weights by Sector
+    # st.subheader("Portfolio Allocation by Sector")
+    # plot_weights_by_sector(weights_optimal, mean_returns.index.tolist())
 
-    # Option to review the quiz
-    if st.button("Return to Quiz"):
-        st.session_state["efficient_frontier_run"] = False
-        st.session_state["current_page"] = "Quiz"
-        st.rerun() 
+    # # Pie Chart of Weights by Country
+    # st.subheader("Portfolio Allocation by Country")
+    # plot_weights_by_country(weights_optimal, mean_returns.index.tolist())
+
+    # # Pie Chart of Weights by Carbon Emissions
+    # st.subheader("Portfolio Allocation by Carbon Emissions")
+    # plot_weights_by_carbon_emissions(weights_optimal, mean_returns.index.tolist())
+
+    # # Pie Chart of Weights by Carbon Intensity
+    # st.subheader("Portfolio Allocation by Carbon Intensity")
+    # plot_weights_by_carbon_intensity(weights_optimal, mean_returns.index.tolist())
+
+    # Pie Chart of Asset Weights
+    st.subheader("Asset Allocation - Pie Chart")
+    plot_asset_allocation_bar_chart(weights_optimal, mean_returns.index.tolist())
+
+    # # Bar Chart of Asset Weights
+    # st.subheader("Asset Allocation - Bar Chart")
+    # plot_asset_allocation_bar_chart(weights_optimal, mean_returns.index.tolist())
+
+    # Asset Contribution to Portfolio Risk
+    st.subheader("Asset Contribution to Portfolio Risk (Top 20)")
+    plot_asset_risk_contribution(weights_optimal, cov_matrix)
+
+    # After plotting the additional graphs, add the download button
+    st.subheader("Download Optimized Weights")
+
+    # Prepare the DataFrame
+    weights_percent = weights_optimal
+    df_weights = pd.DataFrame(
+        {"ISIN": mean_returns.index.tolist(), "Weight (%)": weights_percent}
+    )
+    # Map ISINs to company names
+    df_weights = df_weights.merge(
+        static_data[["ISIN", "Company"]], on="ISIN", how="left"
+    )
+    # Rearrange columns
+    df_weights = df_weights[["ISIN", "Company", "Weight (%)"]]
+
+    # Convert DataFrame to CSV
+    csv = df_weights.to_csv(index=False)
+    # Provide download button
+    st.download_button(
+        label="Download Optimized Weights as CSV",
+        data=csv,
+        file_name="optimized_weights.csv",
+        mime="text/csv",
+    )
+
+
+# -------------------------------
+# Constraints Validation Function
+# -------------------------------
+
+
+def validate_constraints(constraints, selected_objective):
+    errors = []
+    warnings = []
+    adjusted_constraints = constraints.copy()
+
+    net_exposure_value = constraints.get("net_exposure_value", 1.0)
+    net_exposure_constraint_type = constraints.get(
+        "net_exposure_constraint_type", "Equality constraint"
+    )
+    leverage_limit_value = constraints.get("leverage_limit_value", 1.0)
+    leverage_limit_constraint_type = constraints.get(
+        "leverage_limit_constraint_type", "Equality constraint"
+    )
+    long_only = constraints.get("long_only", False)
+    min_weight_value = constraints.get("min_weight_value", None)
+    max_weight_value = constraints.get("max_weight_value", None)
+    include_risk_free_asset = constraints.get("include_risk_free_asset", False)
+    num_assets = constraints.get("num_assets", 1)
+    risk_free_rate = constraints.get("risk_free_rate", 0.0)
+    selected_carbon_scopes = constraints.get("selected_carbon_scopes", [])
+    carbon_limit = constraints.get("carbon_limit", None)
+    selected_year = constraints.get("selected_year", None)
+    use_sentiment = constraints.get("use_sentiment", False)
+
+    # Adjust constraints based on selected objective
+    if selected_objective == "Maximum Sharpe Ratio Portfolio":
+        # For Max Sharpe Ratio, ensure that leverage limit >= abs(net exposure)
+        if leverage_limit_value < abs(net_exposure_value):
+            adjusted_constraints["leverage_limit_value"] = abs(net_exposure_value)
+            warnings.append(
+                f"Leverage Limit adjusted to {adjusted_constraints['leverage_limit_value']} to match Net Exposure for Maximum Sharpe Ratio Portfolio."
+            )
+        # If include_risk_free_asset is False, and leverage limit is less than net exposure, we have an issue
+        if not include_risk_free_asset and leverage_limit_value < abs(
+            net_exposure_value
+        ):
+            errors.append(
+                "Leverage Limit must be at least equal to Net Exposure when Risk-Free Asset is not included in Maximum Sharpe Ratio Portfolio."
+            )
+        # Long only portfolios with net exposure inequality constraint may cause issues
+        if (
+            long_only
+            and net_exposure_constraint_type == "Inequality constraint"
+            and net_exposure_value < 1.0
+        ):
+            warnings.append(
+                "Net Exposure Inequality Constraint less than 1.0 may limit portfolio weights in Long Only Maximum Sharpe Ratio Portfolio."
+            )
+    elif selected_objective == "Minimum Global Variance Portfolio":
+        # Ensure leverage limit >= abs(net exposure)
+        if leverage_limit_value < abs(net_exposure_value):
+            adjusted_constraints["leverage_limit_value"] = abs(net_exposure_value)
+            warnings.append(
+                f"Leverage Limit adjusted to {adjusted_constraints['leverage_limit_value']} to match Net Exposure for Minimum Global Variance Portfolio."
+            )
+        # Adjust minimum weight for long-only portfolios
+        if long_only and min_weight_value is not None and min_weight_value < 0.0:
+            adjusted_constraints["min_weight_value"] = 0.0
+            warnings.append(
+                "Minimum Weight adjusted to 0.0 for Long Only Minimum Global Variance Portfolio."
+            )
+    elif selected_objective == "Maximum Diversification Portfolio":
+        # Ensure leverage limit >= abs(net exposure)
+        if leverage_limit_value < abs(net_exposure_value):
+            adjusted_constraints["leverage_limit_value"] = abs(net_exposure_value)
+            warnings.append(
+                f"Leverage Limit adjusted to {adjusted_constraints['leverage_limit_value']} to match Net Exposure for Maximum Diversification Portfolio."
+            )
+        # Validate minimum weight constraint
+        if min_weight_value is not None:
+            min_weight_total = min_weight_value * num_assets
+            if min_weight_total > net_exposure_value:
+                adjusted_constraints["min_weight_value"] = (
+                    net_exposure_value / num_assets
+                )
+                warnings.append(
+                    f"Minimum Weight adjusted to {adjusted_constraints['min_weight_value']*100:.2f}% to fit Net Exposure."
+                )
+    elif selected_objective == "Equally Weighted Risk Contribution Portfolio":
+        # Ensure leverage limit >= abs(net exposure)
+        if leverage_limit_value < abs(net_exposure_value):
+            adjusted_constraints["leverage_limit_value"] = abs(net_exposure_value)
+            warnings.append(
+                f"Leverage Limit adjusted to {adjusted_constraints['leverage_limit_value']} to match Net Exposure for Equally Weighted Risk Contribution Portfolio."
+            )
+        # Check weight constraints
+        if (
+            min_weight_value is not None
+            and max_weight_value is not None
+            and min_weight_value > max_weight_value
+        ):
+            errors.append(
+                "Minimum Weight cannot be greater than Maximum Weight in Equally Weighted Risk Contribution Portfolio."
+            )
+    elif selected_objective == "Inverse Volatility Portfolio":
+        # Inverse volatility weights may conflict with weight constraints
+        if net_exposure_constraint_type == "Inequality constraint":
+            warnings.append(
+                "Net Exposure Inequality Constraint may prevent weights from summing to desired net exposure in Inverse Volatility Portfolio."
+            )
+    else:
+        # General adjustments
+        pass
+
+    # General constraint validations
+
+    # Restrict Leverage Limit to Inequality Constraint
+    if leverage_limit_constraint_type == "Equality constraint":
+        adjusted_constraints["leverage_limit_constraint_type"] = "Inequality constraint"
+        warnings.append(
+            "Leverage Limit Equality Constraint changed to Inequality Constraint for optimization flexibility."
+        )
+
+    # Ensure leverage limit >= abs(net exposure)
+    if leverage_limit_value < abs(net_exposure_value):
+        adjusted_constraints["leverage_limit_value"] = abs(net_exposure_value)
+        warnings.append(
+            f"Leverage Limit adjusted to {adjusted_constraints['leverage_limit_value']} to be at least equal to Net Exposure."
+        )
+
+    # Ensure min_weight_value <= max_weight_value
+    if (
+        min_weight_value is not None
+        and max_weight_value is not None
+        and min_weight_value > max_weight_value
+    ):
+        errors.append("Minimum Weight cannot be greater than Maximum Weight.")
+
+    # Ensure min_weight_value * num_assets <= net_exposure_value
+    if min_weight_value is not None:
+        min_weight_total = min_weight_value * num_assets
+        if min_weight_total > net_exposure_value:
+            adjusted_constraints["min_weight_value"] = net_exposure_value / num_assets
+            warnings.append(
+                f"Minimum Weight adjusted to {adjusted_constraints['min_weight_value']*100:.2f}% to fit Net Exposure."
+            )
+
+    # Ensure max_weight_value * num_assets >= net_exposure_value
+    if max_weight_value is not None:
+        max_weight_total = max_weight_value * num_assets
+        if max_weight_total < net_exposure_value:
+            adjusted_constraints["max_weight_value"] = net_exposure_value / num_assets
+            warnings.append(
+                f"Maximum Weight adjusted to {adjusted_constraints['max_weight_value']*100:.2f}% to fit Net Exposure."
+            )
+
+    # Adjust min_weight_value to be >= 0 if long_only
+    if long_only and min_weight_value is not None and min_weight_value < 0.0:
+        adjusted_constraints["min_weight_value"] = 0.0
+        warnings.append("Minimum Weight adjusted to 0.0 for Long Only portfolio.")
+
+    # Adjust max_weight_value to be >= 0 if long_only
+    if long_only and max_weight_value is not None and max_weight_value < 0.0:
+        adjusted_constraints["max_weight_value"] = 0.0
+        warnings.append(
+            "Maximum Weight adjusted to non-negative value for Long Only portfolio."
+        )
+
+    # Ensure Net Exposure is non-negative in Long Only portfolio
+    if long_only and net_exposure_value < 0:
+        errors.append("Net Exposure cannot be negative in a Long Only portfolio.")
+
+    # Check for conflicting equality constraints
+    if (
+        net_exposure_constraint_type == "Equality constraint"
+        and leverage_limit_constraint_type == "Equality constraint"
+    ):
+        if leverage_limit_value != abs(net_exposure_value):
+            adjusted_constraints["leverage_limit_value"] = abs(net_exposure_value)
+            warnings.append(
+                f"Leverage Limit adjusted to {adjusted_constraints['leverage_limit_value']} to match Net Exposure Equality Constraint."
+            )
+
+    return adjusted_constraints, errors, warnings
 
 
 # -------------------------------
@@ -1100,24 +1896,38 @@ def efficient_frontier_page():
 def display_constraints():
 
     global long_only, use_sentiment, region_filter, sectors_filter, country_filter
-    global carbon_footprint, min_weight_constraint, max_weight_constraint, leverage_limit
-    global selected_sectors, selected_regions, selected_countries
-    global leverage_limit_value, min_weight_value, max_weight_value
+    global carbon_footprint, min_weight_constraint, max_weight_constraint, leverage_limit, net_exposure, leverage_limit_constraint_type, net_exposure_constraint_type
+    global selected_sectors, selected_regions, selected_countries, selected_carbon_scopes, selected_year
+    global leverage_limit_value, net_exposure_value, min_weight_value, max_weight_value
     global include_risk_free_asset, risk_free_rate
 
     # Constraints
     st.header("Constraints Selection")
-    long_only = st.checkbox("Long only")
-    use_sentiment = st.checkbox("Use sentiment data?")
-    region_filter = st.checkbox("Region filter")
-    sectors_filter = st.checkbox("Sectors filter")
-    country_filter = st.checkbox("Country filter")
-    carbon_footprint = st.checkbox("Carbon footprint")
-    min_weight_constraint = st.checkbox("Minimum weight constraint")
-    max_weight_constraint = st.checkbox("Maximum weight constraint")
-    leverage_limit = st.checkbox("Leverage limit")
+    long_only = st.checkbox("Long only", key="long_only")
+    use_sentiment = st.checkbox("Sentiment data", key="use_sentiment")
+    region_filter = st.checkbox("Region filter", key="region_filter")
+    sectors_filter = st.checkbox("Sectors filter", key="sectors_filter")
+    country_filter = st.checkbox("Country filter", key="country_filter")
+    carbon_footprint = st.checkbox(
+        "Carbon footprint (default to None)", key="carbon_footprint"
+    )
+    min_weight_constraint = st.checkbox(
+        "Minimum weight constraint (default to leverage value)",
+        key="min_weight_constraint",
+    )
+    max_weight_constraint = st.checkbox(
+        "Maximum weight constraint (default to leverage value)",
+        key="max_weight_constraint",
+    )
+    net_exposure = st.checkbox(
+        "Net Exposure Constraint (default to 1)", key="net_exposure"
+    )
+    leverage_limit = st.checkbox(
+        "Leverage Limit Constraint (default to None)", key="leverage_limit"
+    )
 
     if selected_objective == "Maximum Sharpe Ratio Portfolio":
+
         # Risk-Free Asset Inclusion
         st.header("Risk-Free Asset Inclusion")
         include_risk_free_asset = st.checkbox(
@@ -1130,7 +1940,7 @@ def display_constraints():
                 min_value=0.00,
                 max_value=1.00,
                 step=0.001,
-                format="%1f"
+                format="%1f",
             )
         else:
             risk_free_rate = 0.00
@@ -1161,45 +1971,186 @@ def display_constraints():
     else:
         selected_countries = None
 
-    if leverage_limit:
-        leverage_limit_value = st.number_input(
-            "Leverage limit", min_value=0.0, value=1.0
+    if net_exposure:
+        net_exposure_constraint_type = st.radio(
+            "Select constraint type for Net Exposure",
+            options=["Inequality constraint", "Equality constraint"],
+            key="net_exposure_constraint_type",
+        )
+        net_exposure_value = st.number_input(
+            f"Net Exposure {net_exposure_constraint_type} limit",
+            value=1.0,
+            key="net_exposure_value",
         )
     else:
+        net_exposure_value = 1.0
+        net_exposure_constraint_type = "Equality constraint"
+
+    if leverage_limit and selected_objective != "Maximum Sharpe Ratio Portfolio":
+        leverage_limit_constraint_type = st.radio(
+            "Select constraint type for Leverage Limit",
+            options=["Inequality constraint", "Equality constraint"],
+            key="leverage_limit_constraint_type",
+        )
+        leverage_limit_value = st.number_input(
+            f"Leverage {leverage_limit_constraint_type} limit",
+            value=1.0,
+            key="leverage_limit_value",
+        )
+    elif leverage_limit and selected_objective == "Maximum Sharpe Ratio Portfolio":
+        if (leverage_limit or net_exposure) and not include_risk_free_asset:
+            leverage_limit_constraint_type = "Inequality constraint"
+            leverage_limit_value = st.number_input(
+                f"Leverage Inequality limit",
+                value=1.0,
+                key="leverage_limit_value",
+            )
+        else:
+            leverage_limit_constraint_type = st.radio(
+                "Select constraint type for Leverage Limit",
+                options=["Inequality constraint", "Equality constraint"],
+                key="leverage_limit_constraint_type",
+            )
+            leverage_limit_value = st.number_input(
+                f"Leverage {leverage_limit_constraint_type} limit",
+                value=1.0,
+                key="leverage_limit_value",
+            )
+
+    else:
         leverage_limit_value = 1.0
+        leverage_limit_constraint_type = "Equality constraint"
 
     if min_weight_constraint:
         min_weight_value = (
             st.number_input(
                 "Minimum weight (%)",
-                min_value=-(leverage_limit_value * 100.0),
-                max_value=(leverage_limit_value * 100),
-                value=-(leverage_limit_value * 100.0),
+                min_value=-(leverage_limit_value * 100.0) if leverage_limit else -100.0,
+                max_value=(leverage_limit_value * 100) if leverage_limit else 100.0,
+                value=-(leverage_limit_value * 100.0) if leverage_limit else -100.0,
             )
             / 100
         )
     else:
-        min_weight_value = -1.0 * leverage_limit_value
+        if leverage_limit:
+            if leverage_limit_value >= 0:
+                min_weight_value = -1.0 * leverage_limit_value
+            else:
+                min_weight_value = 1.0 * leverage_limit_value
+        else:
+            min_weight_value = -1.0
+
     if max_weight_constraint:
         max_weight_value = (
             st.number_input(
                 "Maximum weight (%)",
-                min_value=-(leverage_limit_value * 100.0),
-                max_value=(leverage_limit_value * 100.0),
-                value=(leverage_limit_value * 100.0),
+                min_value=-(leverage_limit_value * 100.0) if leverage_limit else -100.0,
+                max_value=(leverage_limit_value * 100.0) if leverage_limit else 100.0,
+                value=(leverage_limit_value * 100.0) if leverage_limit else 100.0,
             )
             / 100
         )
     else:
-        max_weight_value = 1.0 * leverage_limit_value
+        if leverage_limit:
+            if leverage_limit_value >= 0:
+                max_weight_value = 1.0 * leverage_limit_value
+            else:
+                max_weight_value = -1.0 * leverage_limit_value
+        else:
+            max_weight_value = 1.0
 
+    # Carbon Footprint Constraints
+    if carbon_footprint:
+        st.subheader("Carbon Footprint Constraints")
+        # Allow user to select which scopes to include
+        carbon_scopes = ["Scope 1", "Scope 2", "Scope 3"]
+        scope_mapping = {
+            "Scope 1": "TC_Scope1",
+            "Scope 2": "TC_Scope2",
+            "Scope 3": "TC_Scope3",
+        }
+        selected_carbon_scopes = st.multiselect(
+            "Select Carbon Scopes to include in the constraint",
+            options=carbon_scopes,
+            default=st.session_state.get("selected_carbon_scopes", []),
+            key="selected_carbon_scopes",
+        )
 
-    # Save the constraints
-    st.session_state["long_only"] = long_only
-    st.session_state["leverage_limit_value"] = leverage_limit_value
-    st.session_state["leverage_limit"] = leverage_limit
+        if selected_carbon_scopes:
+            # Allow user to select the year
+            available_years = [str(year) for year in range(2005, 2021)]
+            selected_year = st.selectbox(
+                "Select Year for Carbon Constraint",
+                options=available_years,
+                index=len(available_years) - 1,
+            )
+
+            carbon_limit = st.number_input(
+                "Set Maximum Carbon Intensity (Metric Tons per Unit)",
+                min_value=0.0,
+                value=1000000.0,  # Default value; adjust as needed
+                step=1000.0,
+                key="carbon_limit",
+            )
+        else:
+            st.warning(
+                "Please select at least one carbon scope to apply the constraint."
+            )
+            st.session_state["carbon_limit"] = None
+    else:
+        st.session_state["selected_carbon_scopes"] = []
+        st.session_state["carbon_limit"] = None
+
+    # Collect constraints into a dictionary
+    constraints = {
+        "long_only": long_only,
+        "use_sentiment": use_sentiment,
+        "region_filter": region_filter,
+        "selected_regions": selected_regions,
+        "sectors_filter": sectors_filter,
+        "selected_sectors": selected_sectors,
+        "country_filter": country_filter,
+        "selected_countries": selected_countries,
+        "carbon_footprint": carbon_footprint,
+        "selected_carbon_scopes": selected_carbon_scopes if carbon_footprint else None,
+        "carbon_limit": carbon_limit if carbon_footprint else None,
+        "selected_year": selected_year if carbon_footprint else None,
+        "min_weight_constraint": min_weight_constraint,
+        "min_weight_value": min_weight_value,
+        "max_weight_constraint": max_weight_constraint,
+        "max_weight_value": max_weight_value,
+        "net_exposure": net_exposure,
+        "net_exposure_value": net_exposure_value,
+        "net_exposure_constraint_type": net_exposure_constraint_type,
+        "leverage_limit": leverage_limit,
+        "leverage_limit_value": leverage_limit_value,
+        "leverage_limit_constraint_type": leverage_limit_constraint_type,
+        "include_risk_free_asset": include_risk_free_asset,
+        "risk_free_rate": risk_free_rate,
+        "num_assets": len(st.session_state.get("filtered_data", data).columns),
+    }
+
+    # Validate and adjust constraints
+    adjusted_constraints, errors, warnings = validate_constraints(
+        constraints, selected_objective
+    )
+
+    # Display warnings to the user
+    if warnings:
+        for warning in warnings:
+            st.warning(warning)
+
+    # If there are errors, display them and stop execution
+    if errors:
+        for error in errors:
+            st.error(error)
+        st.stop()
+
     st.session_state["min_weight_value"] = min_weight_value
     st.session_state["max_weight_value"] = max_weight_value
+    # st.session_state["leverage_limit_value"] = leverage_limit_value
+
+    return adjusted_constraints
 
 
 # -------------------------------
@@ -1210,31 +2161,58 @@ def display_constraints():
 # Function to get current parameters
 def get_current_params():
     params = {
-        "long_only": long_only,
-        "use_sentiment": use_sentiment,
-        "region_filter": region_filter,
+        "long_only": st.session_state.get("long_only", False),
+        "use_sentiment": st.session_state.get("use_sentiment", False),
+        "region_filter": st.session_state.get("region_filter", False),
         "selected_regions": (
-            tuple(sorted(selected_regions)) if selected_regions else None
+            tuple(sorted(st.session_state.get("selected_regions", [])))
+            if st.session_state.get("selected_regions")
+            else None
         ),
-        "sectors_filter": sectors_filter,
+        "sectors_filter": st.session_state.get("sectors_filter", False),
         "selected_sectors": (
-            tuple(sorted(selected_sectors)) if selected_sectors else None
+            tuple(sorted(st.session_state.get("selected_sectors", [])))
+            if st.session_state.get("selected_sectors")
+            else None
         ),
-        "country_filter": country_filter,
+        "country_filter": st.session_state.get("country_filter", False),
         "selected_countries": (
-            tuple(sorted(selected_countries)) if selected_countries else None
+            tuple(sorted(st.session_state.get("selected_countries", [])))
+            if st.session_state.get("selected_countries")
+            else None
         ),
-        "carbon_footprint": carbon_footprint,
-        "min_weight_constraint": min_weight_constraint,
-        "min_weight_value": min_weight_value,
-        "max_weight_constraint": max_weight_constraint,
-        "max_weight_value": max_weight_value,
-        "leverage_limit": leverage_limit,
-        "leverage_limit_value": leverage_limit_value,
-        "include_risk_free_asset": include_risk_free_asset,
-        "risk_free_rate": risk_free_rate,
-        "risk_aversion": st.session_state["risk_aversion"],
-        "selected_objective": selected_objective,
+        "carbon_footprint": st.session_state.get("carbon_footprint", False),
+        "selected_carbon_scopes": (
+            tuple(sorted(st.session_state.get("selected_carbon_scopes", [])))
+            if st.session_state.get("selected_carbon_scopes", [])
+            else None
+        ),
+        "selected_year": st.session_state.get("selected_year", None),
+        "carbon_limit": st.session_state.get("carbon_limit", None),
+        "min_weight_constraint": st.session_state.get("min_weight_constraint", False),
+        "min_weight_value": st.session_state.get("min_weight_value", None),
+        "max_weight_constraint": st.session_state.get("max_weight_constraint", False),
+        "max_weight_value": st.session_state.get("max_weight_value", None),
+        "leverage_limit": st.session_state.get("leverage_limit", False),
+        "leverage_limit_equality": st.session_state.get(
+            "leverage_limit_equality", False
+        ),
+        "leverage_limit_inequality": st.session_state.get(
+            "leverage_limit_inequality", False
+        ),
+        "leverage_limit_value": st.session_state.get("leverage_limit_value", None),
+        "net_exposure": st.session_state.get("net_exposure", False),
+        "net_exposure_equality": st.session_state.get("net_exposure_equality", False),
+        "net_exposure_inequality": st.session_state.get(
+            "net_exposure_inequality", False
+        ),
+        "net_exposure_value": st.session_state.get("net_exposure_value", None),
+        "include_risk_free_asset": st.session_state.get(
+            "include_risk_free_asset", False
+        ),
+        "risk_free_rate": st.session_state.get("risk_free_rate", 0),
+        "risk_aversion": st.session_state.get("risk_aversion", None),
+        "selected_objective": st.session_state.get("selected_objective", None),
     }
     return params
 
@@ -1245,26 +2223,83 @@ def get_current_params():
 
 
 # Filtering based on sectors and countries using ISIN numbers
-def filter_stocks(data, regions=None, sectors=None, countries=None):
+def filter_stocks(
+    data,
+    regions=None,
+    sectors=None,
+    countries=None,
+    carbon_footprint=False,
+    carbon_limit=None,
+    selected_carbon_scopes=None,
+    selected_year=None,
+):
     all_isins = data.columns.tolist()
 
-    if regions is not None:
+    if regions:
         companies_regions = static_data[static_data["Region"].isin(regions)]
         regions_isins = companies_regions["ISIN"].tolist()
         all_isins = list(set(all_isins).intersection(set(regions_isins)))
         st.write(f"Total number of stocks after region filtering: {len(all_isins)}")
 
-    if sectors is not None:
+    if sectors:
         companies_sector = static_data[static_data["GICSSectorName"].isin(sectors)]
         sector_isins = companies_sector["ISIN"].tolist()
         all_isins = list(set(all_isins).intersection(set(sector_isins)))
         st.write(f"Total number of stocks after sector filtering: {len(all_isins)}")
 
-    if countries is not None:
+    if countries:
         companies_country = static_data[static_data["Country"].isin(countries)]
         country_isins = companies_country["ISIN"].tolist()
         all_isins = list(set(all_isins).intersection(set(country_isins)))
         st.write(f"Total number of stocks after country filtering: {len(all_isins)}")
+
+    # Apply Carbon Footprint Constraint
+    if (
+        carbon_footprint
+        and carbon_limit is not None
+        and selected_carbon_scopes
+        and selected_year
+    ):
+        # Define the scope mapping
+        scope_mapping = {
+            "Scope 1": "TC_Scope1",
+            "Scope 2": "TC_Scope2",
+            "Scope 3": "TC_Scope3",
+        }
+
+        # Generate the correct scope column names
+        scope_columns = [
+            f"{scope_mapping[scope]}_{selected_year}"
+            for scope in selected_carbon_scopes
+        ]
+
+        # Check if the scope columns exist in static_data
+        missing_columns = [
+            col for col in scope_columns if col not in static_data.columns
+        ]
+        if missing_columns:
+            st.error(
+                f"The following columns are missing in the data: {missing_columns}"
+            )
+            return pd.DataFrame()  # Return empty DataFrame
+
+        # Sum the selected scopes' emissions for the selected year
+        static_data["Selected_Scopes_Emission"] = static_data[scope_columns].sum(axis=1)
+
+        # Filter companies based on the carbon limit
+        companies_carbon = static_data[
+            static_data["Selected_Scopes_Emission"] <= carbon_limit
+        ]
+
+        carbon_isins = companies_carbon["ISIN"].tolist()
+        all_isins = list(set(all_isins).intersection(set(carbon_isins)))
+        st.write(
+            f"Total number of stocks after carbon footprint filtering: {len(all_isins)}"
+        )
+
+    if not all_isins:
+        st.warning("No stocks meet the selected filtering criteria.")
+        return pd.DataFrame()  # Return empty DataFrame
 
     data_filtered = data[all_isins]
     st.session_state["filtered_data"] = data_filtered
@@ -1684,7 +2719,12 @@ def optimize_sharpe_portfolio(
     long_only,
     min_weight,
     max_weight,
+    leverage_limit,
     leverage_limit_value,
+    leverage_limit_constraint_type,
+    net_exposure,
+    net_exposure_value,
+    net_exposure_constraint_type,
     risk_free_rate,
     include_risk_free_asset,
     risk_aversion,
@@ -1742,7 +2782,7 @@ def optimize_sharpe_portfolio(
     w = cp.Variable(num_assets)
     total_weight = cp.sum(w)
 
-    if not leverage_limit:
+    if not leverage_limit and not net_exposure:
         # **Case 1: No Leverage Limit (Sum of weights equals 1)**
         st.info("Case 1")
         # Use convex optimization to maximize Sharpe ratio
@@ -1785,15 +2825,15 @@ def optimize_sharpe_portfolio(
                 constraints = []
 
                 # Constraints
-                constraints.append(total_weight >= 1)
-                constraints.append(total_weight <= leverage_limit_value)
+                constraints.append(total_weight == 1)
+                # constraints.append(total_weight <= leverage_limit_value)
 
                 if long_only:
                     constraints.append(w >= max(min_weight, 0.0))
-                    constraints.append(w <= min(max_weight, leverage_limit_value))
+                    constraints.append(w <= max_weight)
                 else:
-                    constraints.append(w >= max(min_weight, -leverage_limit_value))
-                    constraints.append(w <= min(max_weight, leverage_limit_value))
+                    constraints.append(w >= min_weight)
+                    constraints.append(w <= max_weight)
 
                 # Solve the problem
                 prob = cp.Problem(objective, constraints)
@@ -1817,27 +2857,60 @@ def optimize_sharpe_portfolio(
             result["status"] = "failure"
 
     else:
-        if num_assets < 500 and include_risk_free_asset:
-            # **Case 2: Leverage Limit with Less Than 500 Assets**
+        if num_assets < 400 and include_risk_free_asset:
+            # **Case 2: Leverage Limit with Less Than 600 Assets**
             st.info("Case 2")
             # Use non-convex optimizer from PyPortfolioOpt
             try:
+                type_leverage = (
+                    "ineq"
+                    if leverage_limit_constraint_type == "Inequality constraint"
+                    else "eq"
+                )
+                type_net_exposure = (
+                    "ineq"
+                    if net_exposure_constraint_type == "Inequality constraint"
+                    else "eq"
+                )
 
-                constraints = [
-                    {"type": "ineq", "fun": lambda x: leverage_limit_value - np.sum(x)},
-                    {"type": "ineq", "fun": lambda x: np.sum(x) - 1},
-                ]
+                # Initialize constraints list
+                constraints = []
+
+                # Add leverage limit constraint if applicable
+                if leverage_limit:
+                    constraints.append(
+                        {
+                            "type": type_leverage,
+                            "fun": lambda x: leverage_limit_value - np.sum(np.abs(x)),
+                        }
+                    )
+
+                # Add net exposure constraint if applicable
+                if net_exposure:
+                    constraints.append(
+                        {
+                            "type": type_net_exposure,
+                            "fun": lambda x: net_exposure_value - np.sum(x),
+                        }
+                    )
+
+                else:
+                    constraints.append(
+                        {
+                            "type": "eq",
+                            "fun": lambda x: 1 - np.sum(x),
+                        }
+                    )
 
                 if long_only:
                     bounds = tuple(
-                        (max(min_weight, 0.0), min(max_weight, leverage_limit_value))
-                        for _ in range(num_assets)
+                        (max(min_weight, 0.0), max_weight) for _ in range(num_assets)
                     )
                 else:
                     bounds = tuple(
                         (
-                            max(min_weight, -leverage_limit_value),
-                            min(max_weight, leverage_limit_value),
+                            min_weight,
+                            max_weight,
                         )
                         for _ in range(num_assets)
                     )
@@ -1908,7 +2981,6 @@ def optimize_sharpe_portfolio(
                 progress_bar.empty()
                 iteration_container.empty()
 
-
                 weights = pd.Series(result.x, index=assets)
                 result["weights"] = weights.values
                 result["mean_returns"] = mean_returns
@@ -1932,18 +3004,35 @@ def optimize_sharpe_portfolio(
             portfolio_return = mean_returns.values @ w
             portfolio_variance = cp.quad_form(w, cov_matrix_adjusted, assume_PSD=True)
 
+            # Initialize constraints list
             constraints = []
 
-            # Constraints
-            constraints.append(total_weight >= 1)
-            constraints.append(total_weight <= leverage_limit_value)
+            # Add net exposure constraint if applicable
+            if net_exposure:
+                net_exposure_constraint = (
+                    total_weight <= net_exposure_value
+                    if net_exposure_constraint_type == "Inequality constraint"
+                    else total_weight == net_exposure_value
+                )
+                constraints.append(net_exposure_constraint)
+            else:
+                constraints.append(cp.sum(w) == 1)
+
+            # Add leverage limit constraint if applicable
+            if leverage_limit:
+                leverage_limit_constraint = (
+                    cp.sum(cp.abs(w)) <= leverage_limit_value
+                    if leverage_limit_constraint_type == "Inequality constraint"
+                    else cp.sum(cp.abs(w)) == leverage_limit_value
+                )
+                constraints.append(leverage_limit_constraint)
 
             if long_only:
                 constraints.append(w >= max(min_weight, 0.0))
-                constraints.append(w <= min(max_weight, leverage_limit_value))
+                constraints.append(w <= max_weight)
             else:
-                constraints.append(w >= max(min_weight, -leverage_limit_value))
-                constraints.append(w <= min(max_weight, leverage_limit_value))
+                constraints.append(w >= min_weight)
+                constraints.append(w <= max_weight)
 
             if include_risk_free_asset:
 
@@ -1954,8 +3043,14 @@ def optimize_sharpe_portfolio(
                             mean_returns,
                             cov_matrix_adjusted,
                             long_only,
+                            include_risk_free_asset,
+                            risk_free_rate,
                             leverage_limit,
                             leverage_limit_value,
+                            leverage_limit_constraint_type,
+                            net_exposure,
+                            net_exposure_value,
+                            net_exposure_constraint_type,
                             min_weight_value,
                             max_weight_value,
                             None,
@@ -1985,6 +3080,11 @@ def optimize_sharpe_portfolio(
                     result["max_sharpe_volatility"] = max_sharpe_volatility
                     result["status"] = "success"
 
+                    # Store the efficient frontier data in st.session_state
+                    st.session_state["frontier_returns"] = frontier_returns
+                    st.session_state["frontier_volatility"] = frontier_volatility
+                    st.session_state["frontier_weights"] = frontier_weights
+
                 except Exception as e:
                     st.error(f"Optimization risk free failed: {e}")
                     result["status"] = "failure"
@@ -1996,11 +3096,8 @@ def optimize_sharpe_portfolio(
                     w, cov_matrix_adjusted, assume_PSD=True
                 )
                 # portfolio_variance = np.dot(w.T, np.dot(cov_matrix, w))
-                utility = (
-                    portfolio_return - 0.5 * risk_aversion * portfolio_variance
-                )
+                utility = portfolio_return - 0.5 * risk_aversion * portfolio_variance
                 objective = cp.Maximize(utility)
-
 
                 # Solve the problem
                 prob = cp.Problem(objective, constraints)
@@ -2147,12 +3244,21 @@ def optimize_min_variance_portfolio(
     long_only,
     min_weight,
     max_weight,
+    leverage_limit,
     leverage_limit_value,
+    leverage_limit_constraint_type,
+    net_exposure,
+    net_exposure_value,
+    net_exposure_constraint_type,
 ):
     # Calculate returns, mean returns, and covariance matrix
     returns = data.pct_change().dropna()
     mean_returns = returns.mean() * 12  # Annualized mean returns
     cov_matrix = returns.cov() * 12  # Annualized covariance matrix
+
+    # st.write(
+    #     f"Leverage limit value from optimize min variance : {leverage_limit_value}"
+    # )
 
     num_assets = len(mean_returns)
     assets = mean_returns.index.tolist()
@@ -2195,28 +3301,35 @@ def optimize_min_variance_portfolio(
     # Objective function
     portfolio_variance = cp.quad_form(w, cov_matrix_adjusted, assume_PSD=True)
 
-    # Constraints
+    # Initialize constraints list
     constraints = []
 
-    if leverage_limit_value:
-        constraints += [cp.sum(w) == leverage_limit_value]
-        if long_only:
-            constraints += [
-                w >= max(min_weight, 0.0),
-                w <= min(max_weight, leverage_limit_value),
-            ]
-        else:
-            constraints += [ 
-                w >= max(min_weight, -leverage_limit_value),
-                w <= min(max_weight, leverage_limit_value),
-            ]
-
+    # Add net exposure constraint if applicable
+    if net_exposure:
+        net_exposure_constraint = (
+            cp.sum(w) <= net_exposure_value
+            if net_exposure_constraint_type == "Inequality constraint"
+            else cp.sum(w) == net_exposure_value
+        )
+        constraints.append(net_exposure_constraint)
     else:
-        constraints += [cp.sum(w) == 1]
-        if long_only:
-            constraints += [w >= max(min_weight, 0.0), w <= min(max_weight, 1.0)]
-        else:
-            constraints += [w >= max(min_weight, -1.0), w <= min(max_weight, 1.0)]
+        constraints.append(cp.sum(w) == 1)
+
+    # Add leverage limit constraint if applicable
+    if leverage_limit:
+        leverage_limit_constraint = (
+            cp.sum(cp.abs(w)) <= leverage_limit_value
+            if leverage_limit_constraint_type == "Inequality constraint"
+            else cp.sum(cp.abs(w)) == leverage_limit_value
+        )
+        constraints.append(leverage_limit_constraint)
+
+    if long_only:
+        constraints.append(w >= max(min_weight, 0.0))
+        constraints.append(w <= max_weight)
+    else:
+        constraints.append(w >= min_weight)
+        constraints.append(w <= max_weight)
 
     # Formulate the problem
     objective = cp.Minimize(portfolio_variance)
@@ -2247,7 +3360,12 @@ def optimize_max_diversification_portfolio(
     long_only,
     min_weight,
     max_weight,
+    leverage_limit,
     leverage_limit_value,
+    leverage_limit_constraint_type,
+    net_exposure,
+    net_exposure_value,
+    net_exposure_constraint_type,
 ):
     # Calculate returns, mean returns, and covariance matrix
     returns = data.pct_change().dropna()
@@ -2290,31 +3408,51 @@ def optimize_max_diversification_portfolio(
         "status": None,
     }
 
+    type_leverage = (
+        "ineq" if leverage_limit_constraint_type == "Inequality constraint" else "eq"
+    )
+    type_net_exposure = (
+        "ineq" if net_exposure_constraint_type == "Inequality constraint" else "eq"
+    )
+
+    # Initialize constraints list
     constraints = []
-    bounds = []
 
+    # Add leverage limit constraint if applicable
     if leverage_limit:
-        constraints.append({"type": "ineq", "fun": lambda x: np.sum(x) - 1})
-        constraints.append({"type": "ineq", "fun": lambda x: leverage_limit_value - np.sum(x)})
-        for _ in range(num_assets):
-            if long_only:
-                bounds.append((
-                    max(min_weight, 0.0),
-                    min(max_weight, leverage_limit_value),
-                ))
-            else:
-                bounds.append((
-                    max(min_weight, -leverage_limit_value),
-                    min(max_weight, leverage_limit_value),
-                ))
+        constraints.append(
+            {
+                "type": type_leverage,
+                "fun": lambda x: leverage_limit_value - np.sum(np.abs(x)),
+            }
+        )
 
+    # Add net exposure constraint if applicable
+    if net_exposure:
+        constraints.append(
+            {
+                "type": type_net_exposure,
+                "fun": lambda x: net_exposure_value - np.sum(x),
+            }
+        )
     else:
-        constraints.append({"type": "eq", "fun": lambda x: np.sum(x) - 1})
-        for _ in range(num_assets):
-            if long_only:
-                bounds.append((max(min_weight, 0.0), min(max_weight, 1.0)))
-            else:
-                bounds.append((max(min_weight, -1.0), min(max_weight, 1.0)))
+        constraints.append(
+            {
+                "type": "eq",
+                "fun": lambda x: 1 - np.sum(x),
+            }
+        )
+
+    if long_only:
+        bounds = tuple((max(min_weight, 0.0), max_weight) for _ in range(num_assets))
+    else:
+        bounds = tuple(
+            (
+                min_weight,
+                max_weight,
+            )
+            for _ in range(num_assets)
+        )
 
     # Initial guess
     x0 = np.full(num_assets, 1.0 / num_assets)
@@ -2335,7 +3473,9 @@ def optimize_max_diversification_portfolio(
         progress_bar = st.progress(0)
         iteration_container = st.empty()
 
-        max_iterations = 1000  # Set maximum number of iterations for estimation if taking too long
+        max_iterations = (
+            1000  # Set maximum number of iterations for estimation if taking too long
+        )
 
         iteration_counter = {"n_iter": 0}
 
@@ -2344,9 +3484,7 @@ def optimize_max_diversification_portfolio(
             iteration_counter["n_iter"] += 1
             progress = iteration_counter["n_iter"] / max_iterations
             progress_bar.progress(min(progress, 1.0))
-            iteration_container.text(
-                f"Iteration: {iteration_counter['n_iter']}"
-            )
+            iteration_container.text(f"Iteration: {iteration_counter['n_iter']}")
 
         # Estimated time indicator
         st.info(
@@ -2360,7 +3498,7 @@ def optimize_max_diversification_portfolio(
                 negative_diversification_ratio,
                 x0,
                 args=(std_devs, cov_matrix_adjusted),
-                method='SLSQP',
+                method="SLSQP",
                 bounds=bounds,
                 constraints=constraints,
                 options={"maxiter": max_iterations},
@@ -2381,9 +3519,13 @@ def optimize_max_diversification_portfolio(
             st.success(f"Optimization completed in {elapsed_time:.2f} seconds")
             # Compute the diversification ratio
             numerator = np.dot(weights, std_devs)
-            denominator = np.sqrt(np.dot(weights.T, np.dot(cov_matrix_adjusted, weights)))
+            denominator = np.sqrt(
+                np.dot(weights.T, np.dot(cov_matrix_adjusted, weights))
+            )
             max_diversification_ratio = numerator / denominator
-            st.write(f"\nMaximum Diversification Ratio: {max_diversification_ratio:.4f}")
+            st.write(
+                f"\nMaximum Diversification Ratio: {max_diversification_ratio:.4f}"
+            )
 
     except Exception as e:
         st.error(f"Optimization failed: {e}")
@@ -2397,7 +3539,12 @@ def optimize_erc_portfolio(
     long_only,
     min_weight,
     max_weight,
+    leverage_limit,
     leverage_limit_value,
+    leverage_limit_constraint_type,
+    net_exposure,
+    net_exposure_value,
+    net_exposure_constraint_type,
 ):
     # Calculate returns, mean returns, and covariance matrix
     returns = data.pct_change().dropna()
@@ -2439,30 +3586,53 @@ def optimize_erc_portfolio(
         "status": None,
     }
 
+    type_leverage = (
+        "ineq" if leverage_limit_constraint_type == "Inequality constraint" else "eq"
+    )
+    type_net_exposure = (
+        "ineq" if net_exposure_constraint_type == "Inequality constraint" else "eq"
+    )
+
+    # Initialize constraints list
     constraints = []
-    bounds = []
 
+    # Add leverage limit constraint if applicable
     if leverage_limit:
-        constraints.append({"type": "eq", "fun": lambda x: np.sum(x) - leverage_limit_value})
-        for _ in range(num_assets):
-            if long_only:
-                bounds.append((
-                    max(min_weight, 0.0),
-                    min(max_weight, leverage_limit_value),
-                ))
-            else:
-                bounds.append((
-                    max(min_weight, -leverage_limit_value),
-                    min(max_weight, leverage_limit_value),
-                ))
+        st.write("YES LEV LIMIT")
+        constraints.append(
+            {
+                "type": type_leverage,
+                "fun": lambda x: leverage_limit_value - np.sum(np.abs(x)),
+            }
+        )
 
+    # Add net exposure constraint if applicable
+    if net_exposure:
+        st.write("YES NET EXP")
+        constraints.append(
+            {
+                "type": type_net_exposure,
+                "fun": lambda x: net_exposure_value - np.sum(x),
+            }
+        )
     else:
-        constraints.append({"type": "eq", "fun": lambda x: np.sum(x) - 1})
-        for _ in range(num_assets):
-            if long_only:
-                bounds.append((max(min_weight, 0.0), min(max_weight, 1.0)))
-            else:
-                bounds.append((max(min_weight, -1.0), min(max_weight, 1.0)))
+        constraints.append(
+            {
+                "type": "eq",
+                "fun": lambda x: 1 - np.sum(x),
+            }
+        )
+
+    if long_only:
+        bounds = tuple((max(min_weight, 0.0), max_weight) for _ in range(num_assets))
+    else:
+        bounds = tuple(
+            (
+                min_weight,
+                max_weight,
+            )
+            for _ in range(num_assets)
+        )
 
     # Initial guess
     x0 = np.full(num_assets, 1.0 / num_assets)
@@ -2474,7 +3644,7 @@ def optimize_erc_portfolio(
         risk_contrib = w * marginal_contrib
         rc = risk_contrib / sigma_p
         avg_rc = sigma_p / num_assets
-        return np.sum((rc - avg_rc)**2)
+        return np.sum((rc - avg_rc) ** 2)
 
     # Solve the problem
     try:
@@ -2482,7 +3652,9 @@ def optimize_erc_portfolio(
         progress_bar = st.progress(0)
         iteration_container = st.empty()
 
-        max_iterations = 1000  # Set maximum number of iterations for estimation if taking too long
+        max_iterations = (
+            1000  # Set maximum number of iterations for estimation if taking too long
+        )
 
         iteration_counter = {"n_iter": 0}
 
@@ -2491,9 +3663,7 @@ def optimize_erc_portfolio(
             iteration_counter["n_iter"] += 1
             progress = iteration_counter["n_iter"] / max_iterations
             progress_bar.progress(min(progress, 1.0))
-            iteration_container.text(
-                f"Iteration: {iteration_counter['n_iter']}"
-            )
+            iteration_container.text(f"Iteration: {iteration_counter['n_iter']}")
 
         # Estimated time indicator
         st.info(
@@ -2507,12 +3677,12 @@ def optimize_erc_portfolio(
                 objective,
                 x0,
                 args=(cov_matrix_adjusted),
-                method='SLSQP',
+                method="SLSQP",
                 bounds=bounds,
                 constraints=constraints,
                 options={"maxiter": max_iterations},
                 callback=callbackF,
-                )
+            )
             end_time = time.time()
             elapsed_time = end_time - start_time
         progress_bar.empty()
@@ -2538,12 +3708,13 @@ def optimize_inverse_volatility_portfolio(
     data,
     min_weight,
     max_weight,
+    leverage_limit,
+    leverage_limit_value,
 ):
     # Calculate returns, mean returns, and covariance matrix
     returns = data.pct_change().dropna()
     mean_returns = returns.mean() * 12  # Annualized mean returns
     cov_matrix = returns.cov() * 12  # Annualized covariance matrix
-
 
     if len(data) / len(cov_matrix) < 2:
 
@@ -2582,7 +3753,8 @@ def optimize_inverse_volatility_portfolio(
     # Inverse of volatilities
     inv_vol = 1 / std_devs
     weights = inv_vol / inv_vol.sum()
-    weights = weights * leverage_limit_value
+    if leverage_limit:
+        weights = weights * leverage_limit_value
 
     # Apply constraints
     weights = np.clip(weights, min_weight, max_weight)
@@ -2605,8 +3777,14 @@ def calculate_efficient_frontier_qp(
     mean_returns,
     cov_matrix,
     long_only,
+    include_risk_free_asset,
+    risk_free_rate,
     leverage_limit,
     leverage_limit_value,
+    leverage_limit_constraint_type,
+    net_exposure,
+    net_exposure_value,
+    net_exposure_constraint_type,
     min_weight_value,
     max_weight_value,
     optimized_returns,
@@ -2620,50 +3798,55 @@ def calculate_efficient_frontier_qp(
     portfolio_return = mean_returns.T @ w
     portfolio_variance = cp.quad_form(w, cov_matrix, assume_PSD=True)
     assets = st.session_state["filtered_data"].columns.tolist()
-    
 
-    if leverage_limit:
-        # Leverage limit constraint
-        # Constraints
-        constraints = [cp.sum(w) >= 1]
-        constraints += [cp.sum(w) <= leverage_limit_value]
+    # Initialize constraints list
+    constraints = []
 
-        if long_only:
-            constraints += [
-                w >= max(min_weight_value, 0.0),
-                w <= min(max_weight_value, leverage_limit_value),
-            ]
-        else:
-            constraints += [
-                w >= max(min_weight_value, -leverage_limit_value),
-                w <= min(max_weight_value, leverage_limit_value),
-            ]
+    # Add net exposure constraint if applicable
+    if net_exposure:
+        net_exposure_constraint = (
+            cp.sum(w) <= net_exposure_value
+            if net_exposure_constraint_type == "Inequality constraint"
+            else cp.sum(w) == net_exposure_value
+        )
+        constraints.append(net_exposure_constraint)
     else:
-        constraints = [cp.sum(w) == 1]
-        if long_only:
-            constraints += [
-                w >= max(min_weight_value, 0.0),
-                w <= min(max_weight_value, 1),
-            ]
-        else:
-            constraints += [
-                w >= max(min_weight_value, -1),
-                w <= min(max_weight_value, 1),
-            ]
+        constraints.append(cp.sum(w) == 1)
 
-    if leverage_limit and len(assets) >= 500 and include_risk_free_asset:
+    # Add leverage limit constraint if applicable
+    if leverage_limit:
+        leverage_limit_constraint = (
+            cp.sum(cp.abs(w)) <= leverage_limit_value
+            if leverage_limit_constraint_type == "Inequality constraint"
+            else cp.sum(cp.abs(w)) == leverage_limit_value
+        )
+        constraints.append(leverage_limit_constraint)
+
+    if long_only:
+        constraints.append(w >= max(min_weight_value, 0.0))
+        constraints.append(w <= max_weight_value)
+    else:
+        constraints.append(w >= min_weight_value)
+        constraints.append(w <= max_weight_value)
+
+    if (leverage_limit and len(assets) >= 400 and include_risk_free_asset) or (
+        net_exposure and len(assets) >= 400 and include_risk_free_asset
+    ):
         if long_only:
             # Target returns for the efficient frontier
             target_returns = np.linspace(
                 -mean_returns.max(),
-                mean_returns.max() * leverage_limit_value * 0.7,
+                mean_returns.max() * np.abs(leverage_limit_value) * 0.7,
                 50,
             )
         else:
             # Target returns for the efficient frontier
             target_returns = np.linspace(
-                -mean_returns.max() * leverage_limit_value,
-                mean_returns.max() * leverage_limit_value * (1 + risk_free_rate) * 2,
+                -mean_returns.max() * np.abs(leverage_limit_value),
+                mean_returns.max()
+                * np.abs(leverage_limit_value)
+                * (1 + risk_free_rate)
+                * 2,
                 50,
             )
     else:
@@ -2724,14 +3907,14 @@ def calculate_efficient_frontier_qp(
 # -------------------------------
 
 
-def run_optimization(selected_objective):
+def run_optimization(selected_objective, constraints):
     # Retrieve constraints from user inputs
-    constraints = {
-        "min_weight": min_weight_value,
-        "max_weight": max_weight_value,
-        "long_only": long_only,
-        "leverage_limit": leverage_limit_value,
-    }
+    # constraints = {
+    #     "min_weight": min_weight_value,
+    #     "max_weight": max_weight_value,
+    #     "long_only": long_only,
+    #     "leverage_limit": leverage_limit_value,
+    # }
 
     # Use filtered data if available
     if "filtered_data" in st.session_state:
@@ -2748,43 +3931,65 @@ def run_optimization(selected_objective):
     if selected_objective == "Maximum Sharpe Ratio Portfolio":
         result = optimize_sharpe_portfolio(
             data_to_use,
-            long_only,
-            min_weight_value,
-            max_weight_value,
-            leverage_limit_value,
-            risk_free_rate,
-            include_risk_free_asset,
+            constraints["long_only"],
+            constraints["min_weight_value"],
+            constraints["max_weight_value"],
+            constraints["leverage_limit"],
+            constraints["leverage_limit_value"],
+            constraints["leverage_limit_constraint_type"],
+            constraints["net_exposure"],
+            constraints["net_exposure_value"],
+            constraints["net_exposure_constraint_type"],
+            constraints["risk_free_rate"],
+            constraints["include_risk_free_asset"],
             risk_aversion,
         )
     elif selected_objective == "Minimum Global Variance Portfolio":
         result = optimize_min_variance_portfolio(
             data_to_use,
             long_only,
-            constraints["min_weight"],
-            constraints["max_weight"],
+            constraints["min_weight_value"],
+            constraints["max_weight_value"],
             constraints["leverage_limit"],
+            constraints["leverage_limit_value"],
+            constraints["leverage_limit_constraint_type"],
+            constraints["net_exposure"],
+            constraints["net_exposure_value"],
+            constraints["net_exposure_constraint_type"],
         )
     elif selected_objective == "Maximum Diversification Portfolio":
         result = optimize_max_diversification_portfolio(
             data_to_use,
             long_only,
-            constraints["min_weight"],
-            constraints["max_weight"],
+            constraints["min_weight_value"],
+            constraints["max_weight_value"],
             constraints["leverage_limit"],
+            constraints["leverage_limit_value"],
+            constraints["leverage_limit_constraint_type"],
+            constraints["net_exposure"],
+            constraints["net_exposure_value"],
+            constraints["net_exposure_constraint_type"],
         )
     elif selected_objective == "Equally Weighted Risk Contribution Portfolio":
         result = optimize_erc_portfolio(
             data_to_use,
             long_only,
-            constraints["min_weight"],
-            constraints["max_weight"],
+            constraints["min_weight_value"],
+            constraints["max_weight_value"],
             constraints["leverage_limit"],
+            constraints["leverage_limit_value"],
+            constraints["leverage_limit_constraint_type"],
+            constraints["net_exposure"],
+            constraints["net_exposure_value"],
+            constraints["net_exposure_constraint_type"],
         )
     elif selected_objective == "Inverse Volatility Portfolio":
         result = optimize_inverse_volatility_portfolio(
             data_to_use,
-            constraints["min_weight"],
-            constraints["max_weight"],
+            constraints["min_weight_value"],
+            constraints["max_weight_value"],
+            constraints["leverage_limit"],
+            constraints["leverage_limit_value"],
         )
     else:
         st.error("Invalid objective selected.")
@@ -2794,6 +3999,24 @@ def run_optimization(selected_objective):
         process_optimization_result(result, data_to_use, selected_objective)
     else:
         st.error("Optimization failed.")
+
+    # Store optimization results in st.session_state
+    # Depending on what is in the result dictionary, process accordingly
+    if result["weights"] is not None:
+        st.session_state["weights"] = result["weights"]
+    elif result.get("max_sharpe_weights") is not None:
+        st.session_state["weights"] = result["max_sharpe_weights"]
+    else:
+        st.error("No weights found in the result.")
+
+    st.session_state["mean_returns"] = result["mean_returns"]
+    st.session_state["cov_matrix"] = result["cov_matrix"]
+    st.session_state["optimization_run"] = True
+
+    # Store the efficient frontier data if available
+    st.session_state["frontier_returns"] = result.get("frontier_returns")
+    st.session_state["frontier_volatility"] = result.get("frontier_volatility")
+    st.session_state["frontier_weights"] = result.get("frontier_weights")
 
 
 # -------------------------------
@@ -2805,10 +4028,10 @@ def process_optimization_result(result, data, selected_objective):
     if result is None or result["status"] != "success":
         st.error("Optimization failed.")
         return
-    
+
     # Retrieve risk aversion from session state
-    if 'risk_aversion' in st.session_state:
-        risk_aversion = st.session_state['risk_aversion']
+    if "risk_aversion" in st.session_state:
+        risk_aversion = st.session_state["risk_aversion"]
     else:
         risk_aversion = 1  # Default value
 
@@ -2818,7 +4041,7 @@ def process_optimization_result(result, data, selected_objective):
     elif result.get("max_sharpe_weights") is not None:
         weights = result["max_sharpe_weights"]
     else:
-        st.error("No weights found in the result.")  
+        st.error("No weights found in the result.")
         return
 
     weights = pd.Series(weights, index=data.columns)
@@ -2867,8 +4090,8 @@ def process_optimization_result(result, data, selected_objective):
             allocation_tangency = (portfolio_return - risk_free_rate) / (
                 risk_aversion * (portfolio_volatility**2)
             )
-            allocation_tangency = min(max(allocation_tangency, 0), sum(weights))
-            allocation_risk_free = max(sum(weights) - allocation_tangency, 0)
+            allocation_tangency = min(max(allocation_tangency, 0), sum(abs(weights)))
+            allocation_risk_free = max(sum(abs(weights)) - allocation_tangency, 0)
 
             st.write(f"Invest {allocation_tangency * 100:.2f}% in the portfolio.")
             st.write(
@@ -2898,6 +4121,9 @@ def process_optimization_result(result, data, selected_objective):
     st.subheader("Portfolio Weights:")
     st.write(allocation_df)
     st.write(f"Sum of the weights: {np.sum(weights)}")
+    st.write(f"Absolute sum of the weights: {np.sum(np.abs(weights))}")
+    st.write(f"Smallest weight: {np.min(weights)}")
+    st.write(f"Biggest weight: {np.max(weights)}")
 
 
 # -------------------------------
@@ -2993,25 +4219,47 @@ def plot_efficient_frontier(
     long_only,
     leverage_limit,
     leverage_limit_value,
+    leverage_limit_constraint_type,
+    net_exposure,
+    net_exposure_value,
+    net_exposure_constraint_type,
     min_weight_value,
     max_weight_value,
+    frontier_returns=None,
+    frontier_volatility=None,
+    frontier_weights=None,
 ):
 
-    tangency_return = np.sum(mean_returns * weights_optimal)
+    if (
+        frontier_returns is None
+        or frontier_volatility is None
+        or frontier_weights is None
+    ):
 
-    # Calculate the efficient frontier with updated constraints
-    frontier_volatility, frontier_returns, frontier_weights = (
-        calculate_efficient_frontier_qp(
-            mean_returns,
-            cov_matrix,
-            long_only,
-            leverage_limit,
-            leverage_limit_value,
-            min_weight_value,
-            max_weight_value,
-            tangency_return,
+        tangency_return = np.sum(mean_returns * weights_optimal)
+
+        # Calculate the efficient frontier with updated constraints
+        frontier_volatility, frontier_returns, frontier_weights = (
+            calculate_efficient_frontier_qp(
+                mean_returns,
+                cov_matrix,
+                long_only,
+                include_risk_free_asset,
+                risk_free_rate,
+                leverage_limit,
+                leverage_limit_value,
+                leverage_limit_constraint_type,
+                net_exposure,
+                net_exposure_value,
+                net_exposure_constraint_type,
+                min_weight_value,
+                max_weight_value,
+                tangency_return,
+            )
         )
-    )
+
+    else:
+        st.info("Using precomputed efficient frontier data.")
 
     # Plotting
     plt.figure(figsize=(10, 7))
@@ -3095,6 +4343,242 @@ def plot_efficient_frontier(
     plt.ylabel("Annualized Expected Returns")
     plt.legend()
     st.pyplot(plt)
+
+
+def plot_asset_allocation_bar_chart(weights, asset_names):
+    # Create a DataFrame with ISINs, weights, and company names
+    df_weights = pd.DataFrame({"ISIN": asset_names, "Weight": weights})
+
+    # Map ISINs to company names
+    df_weights = df_weights.merge(
+        static_data[["ISIN", "Company"]], on="ISIN", how="left"
+    )
+
+    # Compute absolute weights
+    df_weights["AbsWeight"] = df_weights["Weight"].abs()
+
+    # Sort by absolute weight descending
+    df_weights = df_weights.sort_values("AbsWeight", ascending=False)
+
+    # Select top 20 assets based on absolute weights
+    top_n = 20
+    df_top = df_weights.head(top_n).copy()
+
+    # Sum the rest into "Other"
+    df_rest = df_weights.iloc[top_n:]
+    other_weight = df_rest["Weight"].sum()
+    other_abs_weight = df_rest["AbsWeight"].sum()
+    if not df_rest.empty:
+        df_other = pd.DataFrame(
+            {
+                "Company": ["Other"],
+                "Weight": [other_weight],
+                "AbsWeight": [other_abs_weight],
+            }
+        )
+        df_top = pd.concat([df_top, df_other], ignore_index=True)
+
+    # Plot horizontal bar chart
+    plt.figure(figsize=(10, 8))
+    colors = ["red" if x < 0 else "green" for x in df_top["Weight"]]
+    plt.barh(df_top["Company"], df_top["Weight"], color=colors)
+    plt.xlabel("Weight")
+    plt.ylabel("Company")
+    plt.title("Asset Allocation by Weight (Top Absolute Weights)")
+    plt.gca().invert_yaxis()  # Highest weights at the top
+    plt.tight_layout()
+    st.pyplot(plt)
+    plt.close()
+
+
+def plot_weights_by_country(weights, asset_names):
+    # Convert weights to percentages
+    weights_percent = weights * 100
+    # Create DataFrame
+    df_weights = pd.DataFrame({"ISIN": asset_names, "Weight (%)": weights_percent})
+    # Merge with static_data to get countries
+    df_weights = df_weights.merge(
+        static_data[["ISIN", "Country"]], on="ISIN", how="left"
+    )
+    # Group by country
+    df_country = df_weights.groupby("Country")["Weight (%)"].sum().reset_index()
+    # Sort countries by weight
+    df_country = df_country.sort_values("Weight (%)", ascending=False)
+    # Select top countries
+    top_n = 10
+    df_top = df_country.head(top_n).copy()
+    # Sum the rest into 'Other'
+    other_weight = df_country["Weight (%)"].iloc[top_n:].sum()
+    if other_weight > 0:
+        df_other = pd.DataFrame({"Country": ["Other"], "Weight (%)": [other_weight]})
+        df_top = pd.concat([df_top, df_other], ignore_index=True)
+    # Plot pie chart
+    plt.figure(figsize=(8, 8))
+    plt.pie(
+        df_top["Weight (%)"],
+        labels=df_top["Country"],
+        autopct="%1.1f%%",
+        startangle=140,
+    )
+    plt.title("Portfolio Allocation by Country")
+    plt.axis("equal")
+    st.pyplot(plt)
+    plt.close()
+
+
+def plot_weights_by_carbon_emissions(weights, asset_names):
+    # Convert weights to percentages
+    weights_percent = weights * 100
+    # Create DataFrame
+    df_weights = pd.DataFrame({"ISIN": asset_names, "Weight (%)": weights_percent})
+    # Merge with static_data to get carbon emissions
+    df_weights = df_weights.merge(
+        static_data[["ISIN", "TotalCarbonEmissions"]], on="ISIN", how="left"
+    )
+    # Handle missing values
+    df_weights["TotalCarbonEmissions"] = df_weights["TotalCarbonEmissions"].fillna(0)
+    # Categorize emissions into bins
+    bins = [0, 1000, 5000, 10000, 50000, np.inf]
+    labels = ["0-1k", "1k-5k", "5k-10k", "10k-50k", ">50k"]
+    df_weights["EmissionCategory"] = pd.cut(
+        df_weights["TotalCarbonEmissions"], bins=bins, labels=labels
+    )
+    # Group by emission category
+    df_emission = (
+        df_weights.groupby("EmissionCategory")["Weight (%)"].sum().reset_index()
+    )
+    # Plot pie chart
+    plt.figure(figsize=(8, 8))
+    plt.pie(
+        df_emission["Weight (%)"],
+        labels=df_emission["EmissionCategory"],
+        autopct="%1.1f%%",
+        startangle=140,
+    )
+    plt.title("Portfolio Allocation by Carbon Emissions")
+    plt.axis("equal")
+    st.pyplot(plt)
+    plt.close()
+
+
+def plot_weights_by_carbon_intensity(weights, asset_names):
+    # Convert weights to percentages
+    weights_percent = weights * 100
+    # Create DataFrame
+    df_weights = pd.DataFrame({"ISIN": asset_names, "Weight (%)": weights_percent})
+    # Merge with static_data to get carbon intensity
+    df_weights = df_weights.merge(
+        static_data[["ISIN", "CarbonIntensity"]], on="ISIN", how="left"
+    )
+    # Handle missing values
+    df_weights["CarbonIntensity"] = df_weights["CarbonIntensity"].fillna(0)
+    # Categorize intensity into bins
+    bins = [0, 100, 500, 1000, 5000, np.inf]
+    labels = ["0-100", "100-500", "500-1k", "1k-5k", ">5k"]
+    df_weights["IntensityCategory"] = pd.cut(
+        df_weights["CarbonIntensity"], bins=bins, labels=labels
+    )
+    # Group by intensity category
+    df_intensity = (
+        df_weights.groupby("IntensityCategory")["Weight (%)"].sum().reset_index()
+    )
+    # Plot pie chart
+    plt.figure(figsize=(8, 8))
+    plt.pie(
+        df_intensity["Weight (%)"],
+        labels=df_intensity["IntensityCategory"],
+        autopct="%1.1f%%",
+        startangle=140,
+    )
+    plt.title("Portfolio Allocation by Carbon Intensity")
+    plt.axis("equal")
+    st.pyplot(plt)
+    plt.close()
+
+
+# def plot_asset_allocation_bar_chart(weights, asset_names):
+#     # Convert weights to percentages
+#     weights_percent = weights * 100
+#     # Create a DataFrame for plotting
+#     df_weights = pd.DataFrame({"ISIN": asset_names, "Weight (%)": weights_percent})
+
+#     # Map ISINs to company names
+#     df_weights = df_weights.merge(
+#         static_data[["ISIN", "Company"]], on="ISIN", how="left"
+#     )
+
+#     # Sort by weight descending
+#     df_weights = df_weights.sort_values("Weight (%)", ascending=False)
+
+#     # Select top 20 weights
+#     df_top = df_weights.head(20).copy()
+#     # Sum the rest into "Other"
+#     other_weight = df_weights["Weight (%)"].iloc[20:].sum()
+#     if other_weight > 0:
+#         df_other = pd.DataFrame({"Company": ["Other"], "Weight (%)": [other_weight]})
+#         df_top = pd.concat([df_top, df_other], ignore_index=True)
+
+#     # Plot bar chart
+#     plt.figure(figsize=(12, 6))
+#     plt.bar(df_top["Company"], df_top["Weight (%)"])
+#     plt.xlabel("Company")
+#     plt.ylabel("Weight (%)")
+#     plt.xticks(rotation=90)
+#     plt.tight_layout()
+#     st.pyplot(plt)
+#     plt.close()
+
+
+def plot_asset_risk_contribution(weights, cov_matrix):
+    # Calculate the contribution of each asset to portfolio variance
+    weights = np.array(weights)
+    portfolio_variance = np.dot(weights.T, np.dot(cov_matrix.values, weights))
+    marginal_contrib = np.dot(cov_matrix.values, weights)
+    risk_contrib = weights * marginal_contrib
+    risk_contrib_percent = risk_contrib / portfolio_variance * 100
+    # Create a DataFrame for plotting
+    asset_names = cov_matrix.columns.tolist()
+    df_risk_contrib = pd.DataFrame(
+        {"ISIN": asset_names, "Risk Contribution (%)": risk_contrib_percent}
+    )
+    # Map ISINs to company names
+    df_risk_contrib = df_risk_contrib.merge(
+        static_data[["ISIN", "Company"]], on="ISIN", how="left"
+    )
+    # Compute absolute risk contributions
+    df_risk_contrib["AbsRiskContribution"] = df_risk_contrib[
+        "Risk Contribution (%)"
+    ].abs()
+    # Sort by absolute risk contribution descending
+    df_risk_contrib = df_risk_contrib.sort_values(
+        "AbsRiskContribution", ascending=False
+    )
+    # Select top 20 contributors
+    top_n = 20
+    df_top = df_risk_contrib.head(top_n).copy()
+    # Sum the rest into 'Other'
+    other_contrib = df_risk_contrib["Risk Contribution (%)"].iloc[top_n:].sum()
+    other_abs_contrib = df_risk_contrib["AbsRiskContribution"].iloc[top_n:].sum()
+    if not df_risk_contrib.iloc[top_n:].empty:
+        df_other = pd.DataFrame(
+            {
+                "Company": ["Other"],
+                "Risk Contribution (%)": [other_contrib],
+                "AbsRiskContribution": [other_abs_contrib],
+            }
+        )
+        df_top = pd.concat([df_top, df_other], ignore_index=True)
+    # Plot bar chart
+    plt.figure(figsize=(12, 6))
+    colors = ["red" if x < 0 else "blue" for x in df_top["Risk Contribution (%)"]]
+    plt.bar(df_top["Company"], df_top["Risk Contribution (%)"], color=colors)
+    plt.xlabel("Company")
+    plt.ylabel("Risk Contribution (%)")
+    plt.xticks(rotation=90)
+    plt.title("Asset Contribution to Portfolio Risk (Top Absolute Contributions)")
+    plt.tight_layout()
+    st.pyplot(plt)
+    plt.close()
 
 
 # -------------------------------

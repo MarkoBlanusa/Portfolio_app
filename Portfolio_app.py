@@ -4616,10 +4616,10 @@ def run_backtest(
                 current_returns = returns.loc[current_date]
                 # Update weights proportionally based on returns
                 new_weights = weights * (1 + current_returns)
-                # Handle cases where the sum might be zero
-                if new_weights.sum() == 0:
-                    st.error(f"Sum of new weights is zero on {current_date}.")
-                    return
+                # # Handle cases where the sum might be zero
+                # if new_weights.sum() == 0:
+                #     st.error(f"Sum of new weights is zero on {current_date}.")
+                #     return
                 # Normalize weights to sum to 1 (or to the net exposure value if constraints are applied)
                 if constraints.get("net_exposure", False):
                     net_exposure_val = constraints.get("net_exposure_value", 1.0)

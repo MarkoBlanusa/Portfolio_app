@@ -2563,47 +2563,38 @@ def display_constraints():
         else:
             max_weight_value = 1.0
 
-    # Carbon Footprint Constraints
+    # Initialize variables
+    carbon_limit = None
+    selected_carbon_scopes = []
+    
     if carbon_footprint:
         st.subheader("Carbon Footprint Constraints")
         # Allow user to select which scopes to include
         carbon_scopes = ["Scope 1", "Scope 2", "Scope 3"]
-        scope_mapping = {
-            "Scope 1": "TC_Scope1",
-            "Scope 2": "TC_Scope2",
-            "Scope 3": "TC_Scope3",
-        }
         selected_carbon_scopes = st.multiselect(
             "Select Carbon Scopes to include in the constraint",
             options=carbon_scopes,
-            default=st.session_state.get("selected_carbon_scopes", []),
             key="selected_carbon_scopes",
         )
-
+        
         if selected_carbon_scopes:
-            # Allow user to select the year
-            available_years = [str(year) for year in range(2005, 2021)]
-            selected_year = st.selectbox(
-                "Select Year for Carbon Constraint",
-                options=available_years,
-                index=len(available_years) - 1,
-            )
-
+            # Carbon limit input
             carbon_limit = st.number_input(
-                "Set Maximum Carbon Intensity (Metric Tons per Unit)",
+                "Set Maximum Average Carbon Intensity (Metric Tons per Unit)",
                 min_value=0.0,
                 value=1000000.0,  # Default value; adjust as needed
                 step=1000.0,
                 key="carbon_limit",
+                help="This is the maximum average carbon intensity across the selected scopes and time range.",
             )
         else:
-            st.warning(
-                "Please select at least one carbon scope to apply the constraint."
-            )
-            st.session_state["carbon_limit"] = None
+            st.warning("Please select at least one carbon scope to apply the constraint.")
+    
     else:
+        # Reset session state when carbon constraints are disabled
         st.session_state["selected_carbon_scopes"] = []
         st.session_state["carbon_limit"] = None
+
 
     # Collect constraints into a dictionary
     constraints = {
@@ -2627,7 +2618,6 @@ def display_constraints():
         "carbon_footprint": carbon_footprint,
         "selected_carbon_scopes": selected_carbon_scopes if carbon_footprint else None,
         "carbon_limit": carbon_limit if carbon_footprint else None,
-        "selected_year": selected_year if carbon_footprint else None,
         "min_weight_constraint": min_weight_constraint,
         "min_weight_value": min_weight_value,
         "max_weight_constraint": max_weight_constraint,
@@ -2797,57 +2787,6 @@ def filter_stocks(
         all_isins = list(set(all_isins).intersection(set(companies_isins)))
         st.write(f"Total number of stocks after company filtering: {len(all_isins)}")
 
-    # Apply Carbon Footprint Constraint
-    if (
-        carbon_footprint
-        and carbon_limit is not None
-        and selected_carbon_scopes
-        and selected_year
-    ):
-        # Define the scope mapping
-        scope_mapping = {
-            "Scope 1": "TC_Scope1",
-            "Scope 2": "TC_Scope2",
-            "Scope 3": "TC_Scope3",
-        }
-
-        # Generate the correct scope column names
-        scope_columns = [
-            f"{scope_mapping[scope]}_{selected_year}"
-            for scope in selected_carbon_scopes
-        ]
-
-        # Check if the scope columns exist in static_data
-        missing_columns = [
-            col for col in scope_columns if col not in static_data.columns
-        ]
-        if missing_columns:
-            st.error(
-                f"The following columns are missing in the data: {missing_columns}"
-            )
-            return pd.DataFrame()  # Return empty DataFrame
-
-        # Sum the selected scopes' emissions for the selected year
-        static_data["Selected_Scopes_Emission"] = static_data[scope_columns].sum(axis=1)
-
-        # Filter companies based on the carbon limit
-        companies_carbon = static_data[
-            static_data["Selected_Scopes_Emission"] <= carbon_limit
-        ]
-
-        carbon_isins = companies_carbon["ISIN"].tolist()
-        all_isins = list(set(all_isins).intersection(set(carbon_isins)))
-        st.write(
-            f"Total number of stocks after carbon footprint filtering: {len(all_isins)}"
-        )
-
-    if not all_isins:
-        st.warning("No stocks meet the selected filtering criteria.")
-        return pd.DataFrame()  # Return empty DataFrame
-
-    data_filtered = data[all_isins]
-    market_caps_filtered = market_caps_data[all_isins]
-
     # Apply date filtering to data_filtered and market_caps_filtered
     if date_range_filter and start_date and end_date:
         start_date = pd.to_datetime(start_date)
@@ -2869,9 +2808,60 @@ def filter_stocks(
             f"Total number of observations after using sentiment data: {len(data_filtered)}"
         )
 
+
+    # Apply Carbon Footprint Constraint
+    if (
+        carbon_footprint
+        and carbon_limit is not None
+        and selected_carbon_scopes
+    ):
+        # Define the scope mapping
+        scope_mapping = {
+            "Scope 1": "TC_Scope1",
+            "Scope 2": "TC_Scope2",
+            "Scope 3": "TC_Scope3",
+        }
+
+        # Identify all relevant scope columns across all years
+        scope_columns = [
+            col for col in static_data.columns
+            if any(col.startswith(f"{scope_mapping[scope]}_") for scope in selected_carbon_scopes)
+        ]
+
+        if not scope_columns:
+            st.error("No carbon scope columns found for the selected scopes.")
+            return pd.DataFrame()  # Return empty DataFrame
+
+        # Calculate the average emissions across all years for the selected scopes
+        static_data["Selected_Scopes_Avg_Emission"] = static_data[scope_columns].mean(axis=1)
+
+        # Filter companies based on the average carbon limit
+        companies_carbon = static_data[
+            static_data["Selected_Scopes_Avg_Emission"] <= carbon_limit
+        ]
+
+        carbon_isins = companies_carbon["ISIN"].tolist()
+        all_isins = list(set(all_isins).intersection(set(carbon_isins)))
+        st.write(
+            f"Total number of stocks after carbon footprint filtering: {len(all_isins)}"
+        )
+
+    data_filtered = data[all_isins]
+    market_caps_filtered = market_caps_data[all_isins]
+
+    if not all_isins:
+        st.warning("No stocks meet the selected filtering criteria.")
+        return pd.DataFrame(), pd.DataFrame()  # Return empty DataFrame
+
+    # Ensure that data_filtered and market_caps_filtered are not empty after date filtering
+    if data_filtered.empty or market_caps_filtered.empty:
+        st.warning("No data available after applying date filters.")
+        return pd.DataFrame(), pd.DataFrame()
+
     st.session_state["filtered_data"] = data_filtered
     st.session_state["market_caps_filtered"] = market_caps_filtered
     return data_filtered, market_caps_filtered
+
 
 
 # Function to calculate Sortino Ratio

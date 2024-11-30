@@ -142,40 +142,40 @@ set_background(sidebar_bg_img_path, target="sidebar")
 # -------------------------------
 
 
-# # Function to load and process sentiment data
-# def load_and_process_sentiment_data(file_path):
-#     sentiment_df = pd.read_csv(file_path)
-#     # Ensure the Date column is a datetime object
-#     sentiment_df["Date"] = pd.to_datetime(sentiment_df["Date"])
+# Function to load and process sentiment data
+def load_and_process_sentiment_data(file_path):
+    sentiment_df = pd.read_csv(file_path)
+    # Ensure the Date column is a datetime object
+    sentiment_df["Date"] = pd.to_datetime(sentiment_df["Date"])
 
-#     # Create a new column for the month
-#     sentiment_df["Month"] = sentiment_df["Date"].dt.to_period("M")
+    # Create a new column for the month
+    sentiment_df["Month"] = sentiment_df["Date"].dt.to_period("M")
 
-#     # Group by Sector and Month, and aggregate
-#     monthly_df = (
-#         sentiment_df.groupby(["Sector", "Month"])
-#         .agg(
-#             {
-#                 "Sentiment_Sum": "sum",
-#                 "Sentiment_Count": "sum",
-#             }
-#         )
-#         .reset_index()
-#     )
+    # Group by Sector and Month, and aggregate
+    monthly_df = (
+        sentiment_df.groupby(["Sector", "Month"])
+        .agg(
+            {
+                "Sentiment_Sum": "sum",
+                "Sentiment_Count": "sum",
+            }
+        )
+        .reset_index()
+    )
 
-#     # Compute the weighted average sentiment
-#     monthly_df["Weighted_Average_Sentiment"] = (
-#         monthly_df["Sentiment_Sum"] / monthly_df["Sentiment_Count"]
-#     )
+    # Compute the weighted average sentiment
+    monthly_df["Weighted_Average_Sentiment"] = (
+        monthly_df["Sentiment_Sum"] / monthly_df["Sentiment_Count"]
+    )
 
-#     # Convert 'Month' back to datetime
-#     monthly_df["Date"] = monthly_df["Month"].dt.to_timestamp()
+    # Convert 'Month' back to datetime
+    monthly_df["Date"] = monthly_df["Month"].dt.to_timestamp()
 
-#     # Remove 'Unknown' sectors
-#     monthly_df = monthly_df[monthly_df["Sector"] != "Unknown"]
+    # Remove 'Unknown' sectors
+    monthly_df = monthly_df[monthly_df["Sector"] != "Unknown"]
 
-#     # Return the processed monthly sentiment data
-#     return monthly_df
+    # Return the processed monthly sentiment data
+    return monthly_df
 
 
 # Function to load and process carbon data
@@ -256,10 +256,10 @@ def initialize_data():
     # Merge static_data with carbon_data on ISIN
     static_data = pd.merge(static_data, carbon_data, on="ISIN", how="left")
 
-    # sentiment_df = load_and_process_sentiment_data(
-    #     "average_daily_sentiment_per_sector.csv"
-    # )
-    sentiment_df = pd.read_csv("average_monthly_sentiment_per_sector.csv")
+    sentiment_df = load_and_process_sentiment_data(
+        "average_daily_sentiment_per_sector.csv"
+    )
+    # sentiment_df = pd.read_csv("average_monthly_sentiment_per_sector.csv")
 
     market_caps = pd.read_csv("Cleaned_market_caps.csv", index_col="Date")
     data = pd.read_csv("Cleaned_df.csv", index_col="Date")
@@ -296,6 +296,8 @@ def initialize_session_state():
         st.session_state["selected_carbon_scopes"] = []
     if "selected_year" not in st.session_state:
         st.session_state["selected_year"] = "2021"  # Default to the latest year
+    if "case_3" not in st.session_state:
+        st.session_state["case_3"] = False
 
     # Optimization
     if "optimization_run" not in st.session_state:
@@ -1710,6 +1712,7 @@ def efficient_frontier_page():
         st.session_state["frontier_returns"] = None
         st.session_state["frontier_volatility"] = None
         st.session_state["frontier_weights"] = None
+        st.session_state["case_3"] = False
         st.rerun()
 
     # Check if optimization has been run
@@ -1751,7 +1754,7 @@ def efficient_frontier_page():
     st.markdown("**Select the Range of Returns for the Efficient Frontier:**")
     return_range = st.slider(
         "Return Range (%)",
-        min_value=float(min_return * 100),
+        min_value=-float(max_return * 100),
         max_value=float(max_return * 100) * np.sum(np.abs(weights)),
         value=(float(min_return * 100), float(max_return * 100)),
         step=0.1,
@@ -1803,7 +1806,7 @@ def efficient_frontier_page():
                 st.write("CASE 33333")
                 # Compute Sharpe Ratios
                 sharpe_ratios = (
-                    np.array(frontier_returns) - risk_free_rate
+                    np.array(frontier_returns) - st.session_state["risk_free_rate"]
                 ) / np.array(frontier_volatility).flatten()
 
                 # Find the maximum Sharpe Ratio
@@ -3697,8 +3700,8 @@ def optimize_sharpe_portfolio(
                             net_exposure,
                             net_exposure_value,
                             net_exposure_constraint_type,
-                            min_weight_value,
-                            max_weight_value,
+                            min_weight,
+                            max_weight,
                             num_points=num_points,
                             return_range=return_range_decimal,
                         )
@@ -5414,10 +5417,10 @@ def run_backtest(
                         "net_exposure_constraint_type", "equality"
                     )
 
-                    if net_exposure_type == "Equality":
+                    if net_exposure_type == "Equality constraint":
                         # Scale weights to exactly match the net exposure value
                         new_weights = new_weights / new_weights.sum() * net_exposure_val
-                    elif net_exposure_type == "Inequality":
+                    elif net_exposure_type == "Inequality constraint":
                         # Ensure net exposure does not exceed the specified maximum
                         current_net_exposure = new_weights.sum()
                         if current_net_exposure > net_exposure_val:

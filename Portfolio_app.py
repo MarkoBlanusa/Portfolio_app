@@ -14,6 +14,7 @@ from scipy.optimize import minimize
 from scipy.stats import qmc
 import cvxpy as cp
 import scipy.optimize as sco
+from scipy.stats import norm
 from pypfopt import (
     EfficientFrontier,
     expected_returns,
@@ -24,6 +25,8 @@ from pypfopt import (
 import time
 from pypfopt import black_litterman, risk_models, BlackLittermanModel
 import datetime
+from datetime import timedelta
+from dateutil.relativedelta import relativedelta
 
 import os
 import base64
@@ -314,6 +317,7 @@ initialize_session_state()
 
 
 def main():
+
     # Initialize current page in session state
     if st.session_state["current_page"] == "Quiz":
         risk_aversion_quiz()
@@ -323,6 +327,8 @@ def main():
         optimization_page()
     elif st.session_state["current_page"] == "Efficient Frontier":
         efficient_frontier_page()
+    elif st.session_state["current_page"] == "Backtesting":
+        backtesting_page()
     elif st.session_state["current_page"] == "Currency weight" and "weights" in st.session_state:
         display_weights_by_currency(st.session_state["weights"], static_data2)
     else:
@@ -1540,6 +1546,8 @@ def optimization_page():
     # After selecting the objective, display specific constraints
     adjusted_constraints = display_constraints()
 
+    st.session_state["constraints"] = adjusted_constraints
+
     # Get current parameters
     current_params = get_current_params()
     previous_params = st.session_state.get("previous_params", None)
@@ -1621,6 +1629,10 @@ def optimization_page():
         else:
             st.write('Click "Show Efficient Frontier" to display the graph.')
 
+        if st.button("Backtesting page"):
+            st.session_state["current_page"] = "Backtesting"
+            st.rerun()
+
     # Option to view filtered data visualization
     if st.button("View Filtered Data Visualization"):
         st.session_state["current_page"] = "Data Visualization"
@@ -1646,7 +1658,7 @@ def optimization_page():
 def efficient_frontier_page():
     st.title("Efficient Frontier")
 
-    constraints = display_constraints()
+    # constraints = display_constraints()
 
     # Use filtered data if available
     if "filtered_data" in st.session_state:
@@ -1662,6 +1674,7 @@ def efficient_frontier_page():
     nav_return_optimization = st.button(
         "Return to Optimization", key="ef_return_optimization_top"
     )
+    nav_backtest = st.button("Backesting page", key="ef_backtest_top")
 
     if nav_return_quiz:
         st.session_state["current_page"] = "Quiz"
@@ -1684,6 +1697,12 @@ def efficient_frontier_page():
         st.session_state["frontier_weights"] = None
         st.session_state["case_3"] = False
         st.rerun()
+    if nav_backtest:
+        st.session_state["current_page"] = "Backtesting"
+        st.session_state["frontier_returns"] = None
+        st.session_state["frontier_volatility"] = None
+        st.session_state["frontier_weights"] = None
+        st.rerun()
 
     # Check if optimization has been run
     if not st.session_state.get("optimization_run", False):
@@ -1699,6 +1718,8 @@ def efficient_frontier_page():
 
     # User inputs for Efficient Frontier
     st.header("Efficient Frontier Parameters")
+
+    constraints = st.session_state["constraints"]
 
     # Select number of optimized points
     num_points = st.slider(
@@ -1890,6 +1911,173 @@ def efficient_frontier_page():
             file_name="optimized_weights.csv",
             mime="text/csv",
         )
+
+
+def backtesting_page():
+    st.title("Portfolio Backtesting")
+
+     # Handle navigation buttons before heavy computations
+    nav_return_quiz = st.button("Return to Quiz", key="ef_return_quiz_top")
+    nav_view_visualization = st.button(
+        "View Filtered Data Visualization", key="ef_view_visualization_top"
+    )
+    nav_return_optimization = st.button(
+        "Return to Optimization", key="ef_return_optimization_top"
+    )
+    nav_backtest = st.button("Backesting page", key="ef_backtest_top")
+
+    if nav_return_quiz:
+        st.session_state["current_page"] = "Quiz"
+        st.session_state["frontier_returns"] = None
+        st.session_state["frontier_volatility"] = None
+        st.session_state["frontier_weights"] = None
+        st.session_state["case_3"] = False
+        st.rerun()
+    if nav_view_visualization:
+        st.session_state["current_page"] = "Data Visualization"
+        st.session_state["frontier_returns"] = None
+        st.session_state["frontier_volatility"] = None
+        st.session_state["frontier_weights"] = None
+        st.session_state["case_3"] = False
+        st.rerun()
+    if nav_return_optimization:
+        st.session_state["current_page"] = "Optimization"
+        st.session_state["frontier_returns"] = None
+        st.session_state["frontier_volatility"] = None
+        st.session_state["frontier_weights"] = None
+        st.session_state["case_3"] = False
+        st.rerun()
+    if nav_backtest:
+        st.session_state["current_page"] = "Backtesting"
+        st.session_state["frontier_returns"] = None
+        st.session_state["frontier_volatility"] = None
+        st.session_state["frontier_weights"] = None
+        st.rerun()
+    
+    # Check if optimization has been run
+    if not st.session_state.get("optimization_run", False):
+        st.warning("Please run the optimization first.")
+        st.stop()
+    
+    # Retrieve necessary data from session state
+    data = st.session_state.get("filtered_data", None)  # Assuming this contains historical prices
+    if data is None:
+        st.error("No historical data available for backtesting.")
+        st.stop()
+
+    # Calculate the total number of months in the data
+    start_date = data.index.min()
+    end_date = data.index.max()
+    
+    total_months = (end_date.year - start_date.year) * 12 + (end_date.month - start_date.month) + 1
+    st.write(f"**Total Available Data Period:** {start_date.strftime('%Y-%m')} to {end_date.strftime('%Y-%m')} ({total_months} months)")
+
+    constraints = st.session_state["constraints"]
+    selected_objective = st.session_state["selected_objective"]
+    
+    # User Inputs
+    st.header("Backtesting Parameters")
+    
+    # Window Size Input (in Months)
+    max_window_size = min(total_months, 120)  # Cap at 10 years or available data
+    default_window_size = min(48, max_window_size)  # Default to 4 years or max_window_size
+
+    # Window Size Input (in Months)
+    window_size_months = st.slider(
+        "Select Window Size for Optimization (Months)",
+        min_value=1,
+        max_value=max_window_size,  # Up to 10 years
+        value=default_window_size,       # Default to 4 years
+        step=1,
+        help="The number of months of historical data to use for each optimization window.",
+    )
+    
+    # Rebalancing Frequency Input (in Months)
+    rebal_freq_months = st.slider(
+        "Select Rebalancing Frequency (Months)",
+        min_value=1,
+        max_value=12,
+        value=12,
+        step=1,
+        help="How often the portfolio should be fully re-optimized (in months).",
+    )
+
+    # Initial portfolio value
+    initial_value = st.number_input(
+        "Input an initial starting value for the portfolio",
+        value=1000.0,
+        min_value=0.0,
+        step=100.0,
+        format="%.2f",
+    )
+    
+    # Validate Inputs
+    if window_size_months < rebal_freq_months:
+        st.error("Window size must be greater than or equal to rebalancing frequency.")
+        st.stop()
+    
+    # Backtesting Button
+    if st.button("Run Backtesting"):
+        with st.spinner("Running backtest..."):
+            # Perform Backtesting
+            portfolio_cum_returns, metrics = run_backtest(
+                selected_objective,
+                constraints,
+                window_size_months,
+                rebal_freq_months,
+                initial_value,
+            )
+            st.success("Backtesting completed successfully.")
+    
+            # Store results in session state
+            st.session_state["portfolio_cum_returns"] = portfolio_cum_returns
+            st.session_state["backtest_metrics"] = metrics
+    
+    # Display Backtesting Results
+    if st.session_state.get("portfolio_cum_returns", None) is not None:
+        st.header("Backtesting Performance")
+        
+        # Plot Cumulative Returns
+        st.subheader("Cumulative Returns")
+        fig, ax = plt.subplots(figsize=(10, 6))
+        ax.plot(st.session_state["portfolio_cum_returns"], label="Portfolio")
+        ax.set_xlabel("Date")
+        ax.set_ylabel("Cumulative Returns")
+        ax.set_title("Cumulative Returns Over Time")
+        ax.legend()
+        st.pyplot(fig)
+        plt.close()
+        
+        # Display Descriptive Statistics
+        st.subheader("Performance Metrics")
+        metrics = st.session_state["backtest_metrics"]
+        metrics_df = pd.DataFrame.from_dict(metrics, orient='index', columns=['Value'])
+        st.table(metrics_df)
+        
+        # Optionally, allow downloading the backtest results
+        if st.button("Download Backtest Results"):
+            portfolio_cum_returns = st.session_state["portfolio_cum_returns"]
+            metrics = st.session_state["backtest_metrics"]
+            
+            # Prepare DataFrame for download
+            cum_returns_df = portfolio_cum_returns.reset_index()
+            cum_returns_df.columns = ['Date', 'Cumulative Returns']
+            metrics_df = pd.DataFrame.from_dict(metrics, orient='index', columns=['Value'])
+            metrics_df = metrics_df.reset_index().rename(columns={'index': 'Metric'})
+            
+            # Create CSVs
+            cum_returns_csv = cum_returns_df.to_csv(index=False)
+            metrics_csv = metrics_df.to_csv(index=False)
+            
+            # Combine both CSVs into a single file (optional)
+            combined_csv = cum_returns_csv + "\n" + metrics_csv
+            
+            st.download_button(
+                label="Download Backtest Results as CSV",
+                data=combined_csv,
+                file_name="backtest_results.csv",
+                mime="text/csv",
+            )
 
 
 # -------------------------------
@@ -2686,6 +2874,14 @@ def filter_stocks(
     st.session_state["filtered_data"] = data_filtered
     st.session_state["market_caps_filtered"] = market_caps_filtered
     return data_filtered, market_caps_filtered
+
+
+# Function to calculate Sortino Ratio
+def sortino_ratio(returns, target=0):
+    downside_returns = returns[returns < target]
+    expected_return = returns.mean()
+    downside_std = downside_returns.std()
+    return (expected_return - target) / downside_std if downside_std != 0 else np.nan
 
 
 # -------------------------------
@@ -4475,6 +4671,219 @@ def calculate_efficient_frontier_qp(
 # 8. Run Optimization Function
 # -------------------------------
 
+def black_litterman_mu(data_to_use, market_caps_data, full_assets, full_mean_returns, full_cov_matrix_adjusted, cov_matrix_adjusted, assets, constraints):
+    sentiment_window = constraints.get("sentiment_window", 3)
+    sentiment_count_threshold = constraints.get("sentiment_count_threshold", 100)
+
+    # Load the sentiment data (already processed)
+    sentiment_data_to_use = sentiment_data.copy()
+
+    # st.dataframe(sentiment_data_to_use)
+
+    # Apply date filtering to sentiment data based on sentiment_window
+    # Get the last date in data_to_use
+    last_date = data_to_use.index.max()
+    # Compute start date based on sentiment window
+    sentiment_start_date = last_date - pd.DateOffset(months=sentiment_window)
+
+    # Filter sentiment data
+    sentiment_data_filtered = sentiment_data_to_use[
+        (sentiment_data_to_use["Date"] >= sentiment_start_date)
+        & (sentiment_data_to_use["Date"] <= last_date)
+    ]
+
+    sentiment_data_filtered = sentiment_data_filtered.copy()
+
+    # Apply sentiment count threshold by setting low counts to NaN
+    sentiment_pivot = sentiment_data_filtered.pivot(
+        index="Date", columns="Sector", values="Weighted_Average_Sentiment"
+    )
+    sentiment_pivot = sentiment_pivot.mask(
+        sentiment_data_filtered.pivot(
+            index="Date", columns="Sector", values="Sentiment_Count"
+        )
+        < sentiment_count_threshold
+    )
+
+    # Interpolate missing values to handle gaps
+    sentiment_pivot = sentiment_pivot.interpolate(method="linear").ffill().bfill()
+
+    # Calculate the average sentiment per sector over the window
+    sector_sentiment = sentiment_pivot.mean()
+
+    # # Optionally, apply EWMA for further smoothing
+    # sector_sentiment = sector_sentiment.ewm(span=sentiment_window, adjust=False).mean()
+
+    # # Convert sector_sentiment to a pandas Series
+    # sector_sentiment = pd.Series(sector_sentiment)
+
+    # Correctly assign start_date and end_date without trailing commas
+    start_date = constraints.get("start_date", None)
+    end_date = constraints.get("end_date", None)
+
+    # Convert end_date to Timestamp if it's a date object
+    if isinstance(end_date, datetime.date) and not isinstance(end_date, pd.Timestamp):
+        end_date = end_date.strftime('%Y/%m/%d')
+        # st.write(end_date)
+
+    if start_date and end_date:
+        # st.write("yessss")
+        
+        # Slice the market_caps_data up to end_date
+        full_latest_market_caps = market_caps_data.loc[:end_date]
+    else:
+        # If either start_date or end_date is not provided, cap to sentiment_max_date
+        sentiment_max_date = sentiment_data["Date"].max()
+        
+        # Ensure sentiment_max_date is a Timestamp
+        if isinstance(sentiment_max_date, datetime.date) and not isinstance(sentiment_max_date, pd.Timestamp):
+            sentiment_max_date = sentiment_max_date.strftime('%Y/%m/%d')
+            
+        # Slice the market_caps_data up to sentiment_max_date
+        full_latest_market_caps = market_caps_data.loc[:sentiment_max_date]
+
+    # Get the latest market caps
+    # st.write("data not filtered : ")
+    # st.dataframe(data)
+    full_latest_market_caps = full_latest_market_caps.iloc[-1]
+    # st.write(f"market caps to use : {market_caps_data.iloc[-1].shape}")
+    # st.dataframe(market_caps_data.iloc[-1])
+    # st.write(f"latest market caps : {full_latest_market_caps.shape}")
+    # st.dataframe(full_latest_market_caps)
+
+    # Align market caps with assets
+    # latest_market_caps = latest_market_caps.reindex(assets).dropna()
+    # st.write(f"latest market caps : {full_latest_market_caps.shape}")
+    market_weights = full_latest_market_caps / full_latest_market_caps.sum()
+    market_weights = market_weights.values  # Convert to numpy array
+
+    # st.dataframe(market_weights)
+
+    # st.write(f"market weight shape {market_weights.shape}")
+
+    # Estimate δ using our asset universe
+    market_portfolio_return = np.dot(market_weights, full_mean_returns)
+    market_portfolio_variance = np.dot(
+        market_weights.T, np.dot(full_cov_matrix_adjusted, market_weights)
+    )
+    delta = (market_portfolio_return - risk_free_rate) / market_portfolio_variance
+
+    # st.write(f"delta : {delta}")
+
+    # # Compute π
+    # pi = black_litterman.market_implied_prior_returns(
+    # market_weights, delta, cov_matrix_adjusted, risk_free_rate=risk_free_rate)
+
+    # Compute the implied equilibrium returns (pi)
+    # st.write(f"Full cov matrix adjusted : {full_cov_matrix_adjusted.shape}")
+    # st.dataframe(full_cov_matrix_adjusted)
+    full_pi = delta * full_cov_matrix_adjusted.dot(market_weights)
+    # st.write(f"Full Pi : {full_pi.shape}")
+    # st.dataframe(full_pi)
+
+    # Map assets to their indices in the full dataset
+    asset_indices = [
+        full_assets.index(asset) for asset in assets if asset in full_assets
+    ]
+
+    # Extract the subset of π and covariance matrix
+    pi = full_pi[asset_indices]
+    cov_matrix_adjusted = full_cov_matrix_adjusted.iloc[
+        asset_indices, asset_indices
+    ]
+
+    # st.write(f"Pi : {pi.shape}")
+    # st.dataframe(pi)
+    # st.write(f"Cov matrix used : {cov_matrix_adjusted.shape}")
+    # st.dataframe(cov_matrix_adjusted)
+
+    asset_sector_map = static_data.set_index("ISIN")["GICSSectorName"].to_dict()
+    asset_sector_df = pd.DataFrame({"ISIN": assets})
+    asset_sector_df["Sector"] = asset_sector_df["ISIN"].map(asset_sector_map)
+
+    # st.write("sector_sentiment : ")
+    # st.dataframe(sector_sentiment)
+
+    # Align sectors in data with sectors in sentiment views
+    sectors_in_data = asset_sector_df["Sector"].unique()
+    sectors_in_views = sector_sentiment.index.intersection(sectors_in_data)
+    sector_sentiment = sector_sentiment.loc[sectors_in_views]
+
+    # st.write("sectors in data : ")
+    # st.dataframe(sectors_in_data)
+
+    # Create the P matrix
+    num_assets = len(assets)
+    num_views = len(sector_sentiment)
+    P = np.zeros((num_views, num_assets))
+    Q = sector_sentiment.values  # The views
+    # st.write(f"Q matrix : {Q.shape}")
+    # st.dataframe(Q)
+
+    # Get the latest market caps for the assets in the optimization subset
+    latest_market_caps = full_latest_market_caps[assets]
+
+    for i, sector in enumerate(sectors_in_views):
+        # Assets in the sector
+        assets_in_sector = asset_sector_df[asset_sector_df["Sector"] == sector][
+            "ISIN"
+        ]
+
+        # Filter assets present in both 'assets' and 'market_caps_to_use'
+        sector_assets = [
+            asset
+            for asset in assets_in_sector
+            if asset in assets and asset in market_caps_data.columns
+        ]
+
+        # Get indices of these assets in the 'assets' list
+        indices = [assets.index(asset) for asset in sector_assets]
+
+        n = len(indices)
+        if n > 0:
+            # Get the latest market caps for these assets
+            sector_market_caps = latest_market_caps[sector_assets]
+
+            # Calculate total market cap for the sector
+            sector_total_market_cap = sector_market_caps.sum()
+
+            # Calculate weights within the sector
+            sector_weights = sector_market_caps / sector_total_market_cap
+
+            # Assign weights to P matrix
+            for idx, asset in zip(indices, sector_assets):
+                weight = sector_weights[asset]
+                P[i, idx] = weight
+
+    # st.write(f"P matrix : {P.shape}")
+    # st.dataframe(P)
+
+    # Define tau (scaling factor)
+    tau = 0.05  # Adjust as necessary
+
+    # Define omega (uncertainty matrix)
+    omega = np.diag(np.diag(tau * P.dot(cov_matrix_adjusted).dot(P.T)))
+    # Regularize omega to prevent singular matrix error
+    omega += np.eye(omega.shape[0]) * 1e-6
+
+    # Compute the posterior expected returns
+    bl = BlackLittermanModel(
+        cov_matrix_adjusted, pi=pi, P=P, Q=Q, omega=omega, tau=tau
+    )
+    bl_returns = bl.bl_returns()
+
+    # st.write("Mean returns from including sentiment data : ")
+
+    # st.dataframe(bl_returns)
+
+    # Save the expected returns and covariance matrix in session state
+    st.session_state["mean_returns"] = bl_returns
+    st.session_state["cov_matrix"] = cov_matrix_adjusted
+
+    return bl_returns
+
+
+
 
 def run_optimization(selected_objective, constraints):
     st.session_state["optimization_run"] = False  # Reset the flag
@@ -4564,212 +4973,8 @@ def run_optimization(selected_objective, constraints):
 
     if use_sentiment:
 
-        sentiment_window = constraints.get("sentiment_window", 3)
-        sentiment_count_threshold = constraints.get("sentiment_count_threshold", 100)
-
-        # Load the sentiment data (already processed)
-        sentiment_data_to_use = sentiment_data.copy()
-
-        st.dataframe(sentiment_data_to_use)
-
-        # Apply date filtering to sentiment data based on sentiment_window
-        # Get the last date in data_to_use
-        last_date = data_to_use.index.max()
-        # Compute start date based on sentiment window
-        sentiment_start_date = last_date - pd.DateOffset(months=sentiment_window)
-
-        # Filter sentiment data
-        sentiment_data_filtered = sentiment_data_to_use[
-            (sentiment_data_to_use["Date"] >= sentiment_start_date)
-            & (sentiment_data_to_use["Date"] <= last_date)
-        ]
-
-        sentiment_data_filtered = sentiment_data_filtered.copy()
-
-        # Apply sentiment count threshold by setting low counts to NaN
-        sentiment_pivot = sentiment_data_filtered.pivot(
-            index="Date", columns="Sector", values="Weighted_Average_Sentiment"
-        )
-        sentiment_pivot = sentiment_pivot.mask(
-            sentiment_data_filtered.pivot(
-                index="Date", columns="Sector", values="Sentiment_Count"
-            )
-            < sentiment_count_threshold
-        )
-
-        # Interpolate missing values to handle gaps
-        sentiment_pivot = sentiment_pivot.interpolate(method="linear").ffill().bfill()
-
-        # Calculate the average sentiment per sector over the window
-        sector_sentiment = sentiment_pivot.mean()
-
-        # # Optionally, apply EWMA for further smoothing
-        # sector_sentiment = sector_sentiment.ewm(span=sentiment_window, adjust=False).mean()
-
-        # # Convert sector_sentiment to a pandas Series
-        # sector_sentiment = pd.Series(sector_sentiment)
-
-        # Correctly assign start_date and end_date without trailing commas
-        start_date = constraints.get("start_date", None)
-        end_date = constraints.get("end_date", None)
-
-        # Convert end_date to Timestamp if it's a date object
-        if isinstance(end_date, datetime.date) and not isinstance(end_date, pd.Timestamp):
-            end_date = end_date.strftime('%Y/%m/%d')
-            st.write(end_date)
-
-        if start_date and end_date:
-            st.write("yessss")
-            
-            # Slice the market_caps_data up to end_date
-            full_latest_market_caps = market_caps_data.loc[:end_date]
-        else:
-            # If either start_date or end_date is not provided, cap to sentiment_max_date
-            sentiment_max_date = sentiment_data["Date"].max()
-            
-            # Ensure sentiment_max_date is a Timestamp
-            if isinstance(sentiment_max_date, datetime.date) and not isinstance(sentiment_max_date, pd.Timestamp):
-                sentiment_max_date = sentiment_max_date.strftime('%Y/%m/%d')
-             
-            # Slice the market_caps_data up to sentiment_max_date
-            full_latest_market_caps = market_caps_data.loc[:sentiment_max_date]
-
-        # Get the latest market caps
-        st.write("data not filtered : ")
-        st.dataframe(data)
-        full_latest_market_caps = full_latest_market_caps.iloc[-1]
-        st.write(f"market caps to use : {market_caps_to_use.iloc[-1].shape}")
-        st.dataframe(market_caps_to_use.iloc[-1])
-        st.write(f"latest market caps : {full_latest_market_caps.shape}")
-        st.dataframe(full_latest_market_caps)
-
-        # Align market caps with assets
-        # latest_market_caps = latest_market_caps.reindex(assets).dropna()
-        st.write(f"latest market caps : {full_latest_market_caps.shape}")
-        market_weights = full_latest_market_caps / full_latest_market_caps.sum()
-        market_weights = market_weights.values  # Convert to numpy array
-
-        st.dataframe(market_weights)
-
-        st.write(f"market weight shape {market_weights.shape}")
-
-        # Estimate δ using our asset universe
-        market_portfolio_return = np.dot(market_weights, full_mean_returns)
-        market_portfolio_variance = np.dot(
-            market_weights.T, np.dot(full_cov_matrix_adjusted, market_weights)
-        )
-        delta = (market_portfolio_return - risk_free_rate) / market_portfolio_variance
-
-        st.write(f"delta : {delta}")
-
-        # # Compute π
-        # pi = black_litterman.market_implied_prior_returns(
-        # market_weights, delta, cov_matrix_adjusted, risk_free_rate=risk_free_rate)
-
-        # Compute the implied equilibrium returns (pi)
-        st.write(f"Full cov matrix adjusted : {full_cov_matrix_adjusted.shape}")
-        st.dataframe(full_cov_matrix_adjusted)
-        full_pi = delta * full_cov_matrix_adjusted.dot(market_weights)
-        st.write(f"Full Pi : {full_pi.shape}")
-        st.dataframe(full_pi)
-
-        # Map assets to their indices in the full dataset
-        asset_indices = [
-            full_assets.index(asset) for asset in assets if asset in full_assets
-        ]
-
-        # Extract the subset of π and covariance matrix
-        pi = full_pi[asset_indices]
-        cov_matrix_adjusted = full_cov_matrix_adjusted.iloc[
-            asset_indices, asset_indices
-        ]
-
-        st.write(f"Pi : {pi.shape}")
-        st.dataframe(pi)
-        st.write(f"Cov matrix used : {cov_matrix_adjusted.shape}")
-        st.dataframe(cov_matrix_adjusted)
-
-        asset_sector_map = static_data.set_index("ISIN")["GICSSectorName"].to_dict()
-        asset_sector_df = pd.DataFrame({"ISIN": assets})
-        asset_sector_df["Sector"] = asset_sector_df["ISIN"].map(asset_sector_map)
-
-        st.write("sector_sentiment : ")
-        st.dataframe(sector_sentiment)
-
-        # Align sectors in data with sectors in sentiment views
-        sectors_in_data = asset_sector_df["Sector"].unique()
-        sectors_in_views = sector_sentiment.index.intersection(sectors_in_data)
-        sector_sentiment = sector_sentiment.loc[sectors_in_views]
-
-        st.write("sectors in data : ")
-        st.dataframe(sectors_in_data)
-
-        # Create the P matrix
-        num_assets = len(assets)
-        num_views = len(sector_sentiment)
-        P = np.zeros((num_views, num_assets))
-        Q = sector_sentiment.values  # The views
-        st.write(f"Q matrix : {Q.shape}")
-        st.dataframe(Q)
-
-        # Get the latest market caps for the assets in the optimization subset
-        latest_market_caps = full_latest_market_caps[assets]
-
-        for i, sector in enumerate(sectors_in_views):
-            # Assets in the sector
-            assets_in_sector = asset_sector_df[asset_sector_df["Sector"] == sector][
-                "ISIN"
-            ]
-
-            # Filter assets present in both 'assets' and 'market_caps_to_use'
-            sector_assets = [
-                asset
-                for asset in assets_in_sector
-                if asset in assets and asset in market_caps_data.columns
-            ]
-
-            # Get indices of these assets in the 'assets' list
-            indices = [assets.index(asset) for asset in sector_assets]
-
-            n = len(indices)
-            if n > 0:
-                # Get the latest market caps for these assets
-                sector_market_caps = latest_market_caps[sector_assets]
-
-                # Calculate total market cap for the sector
-                sector_total_market_cap = sector_market_caps.sum()
-
-                # Calculate weights within the sector
-                sector_weights = sector_market_caps / sector_total_market_cap
-
-                # Assign weights to P matrix
-                for idx, asset in zip(indices, sector_assets):
-                    weight = sector_weights[asset]
-                    P[i, idx] = weight
-
-        st.write(f"P matrix : {P.shape}")
-        st.dataframe(P)
-
-        # Define tau (scaling factor)
-        tau = 0.05  # Adjust as necessary
-
-        # Define omega (uncertainty matrix)
-        omega = np.diag(np.diag(tau * P.dot(cov_matrix_adjusted).dot(P.T)))
-        # Regularize omega to prevent singular matrix error
-        omega += np.eye(omega.shape[0]) * 1e-6
-
-        # Compute the posterior expected returns
-        bl = BlackLittermanModel(
-            cov_matrix_adjusted, pi=pi, P=P, Q=Q, omega=omega, tau=tau
-        )
-        bl_returns = bl.bl_returns()
-
-        st.write("Mean returns from including sentiment data : ")
-
-        st.dataframe(bl_returns)
-
-        # Save the expected returns and covariance matrix in session state
-        st.session_state["mean_returns"] = bl_returns
+        mu_bar = black_litterman_mu(data_to_use, market_caps_data, full_assets, full_mean_returns, full_cov_matrix_adjusted, cov_matrix_adjusted, assets, constraints)
+        st.session_state["mean_returns"] = mu_bar
         st.session_state["cov_matrix"] = cov_matrix_adjusted
 
     else:
@@ -4903,6 +5108,325 @@ def run_optimization(selected_objective, constraints):
     # st.session_state["frontier_volatility"] = result.get("frontier_volatility")
     # st.session_state["frontier_weights"] = result.get("frontier_weights")
 
+def cov_matrix_adjusted(data, cov_matrix):
+    if len(data) / len(cov_matrix) < 2:
+
+        st.info(f"Len cov matrix : {len(cov_matrix)}")
+        st.info(f"Number observations : {len(data)}")
+
+        st.info(
+            f"Ratio of observations / nb. of assets is below 2, current ratio: {len(data) / len(cov_matrix)}. We use shrinkage. "
+        )
+
+        cov_matrix = risk_models.CovarianceShrinkage(
+            data
+        ).ledoit_wolf()
+
+        st.info("Covariance matrix shrinked using Ledoit_Wolf. ")
+
+        # # Use Ledoit-Wolf shrinkage to ensure the covariance matrix is positive semidefinite
+        # cov_matrix = risk_models.fix_nonpositive_semidefinite(
+        #     cov_matrix
+        # )  # Annualized covariance
+
+    # Adjust covariance matrix
+    cov_matrix_adjusted = adjust_covariance_matrix(cov_matrix.values)
+    cov_matrix_adjusted = pd.DataFrame(
+        cov_matrix_adjusted, index=cov_matrix.index, columns=cov_matrix.columns
+    )
+
+    return cov_matrix_adjusted
+
+
+def run_backtest(
+    selected_objective,
+    constraints,
+    window_size_months,
+    rebal_freq_months,
+    initial_value,
+):
+
+    # Use filtered data if available
+    if "filtered_data" in st.session_state:
+        data_to_use = st.session_state["filtered_data"]
+    else:
+        data_to_use = data
+
+    st.write(f"data shape {data_to_use.shape}")
+
+    if "market_caps_filtered" in st.session_state:
+        market_caps_to_use = st.session_state["market_caps_filtered"]
+    else:
+        market_caps_to_use = market_caps_data
+
+    # Retrieve risk aversion from session state
+    if "risk_aversion" in st.session_state:
+        risk_aversion = st.session_state["risk_aversion"]
+    else:
+        risk_aversion = 1  # Default value
+
+    risk_free_rate = constraints.get("risk_free_rate", 0.0)
+    include_transaction_fees = constraints.get("include_transaction_fees", False)
+    fees = constraints.get("fees", False)
+    use_sentiment = constraints.get("use_sentiment", False)
+
+    full_returns = data.pct_change().dropna()
+    full_mean_returns = full_returns.mean()
+
+    full_cov_matrix = full_returns.cov()
+
+    returns = data_to_use.pct_change().dropna()
+    mean_returns = returns.mean()
+
+    cov_matrix = returns.cov()
+
+    st.dataframe(mean_returns)
+
+    st.write(f"cov matrix shape {cov_matrix.shape}")
+
+    num_assets = len(mean_returns)
+    assets = mean_returns.index.tolist()
+
+    # List of all assets in the full dataset
+    full_assets = data.columns.tolist()
+
+    full_cov_matrix_adjusted = risk_models.CovarianceShrinkage(
+        data
+    ).ledoit_wolf()
+    full_cov_matrix_adjusted = adjust_covariance_matrix(full_cov_matrix_adjusted.values)
+    full_cov_matrix_adjusted = pd.DataFrame(
+        full_cov_matrix_adjusted,
+        index=full_cov_matrix.index,
+        columns=full_cov_matrix.columns,
+    )
+
+    # Initialize variables
+    start_date = returns.index.min() + relativedelta(months=window_size_months)
+    dates = returns.index[returns.index >= start_date]
+
+    # Initialize portfolio value
+    portfolio_value = initial_value
+    portfolio_values = []
+    portfolio_returns = []
+    
+    # Initialize weights
+    weights = None
+    last_optimization_date = None
+    next_rebal_date = None
+
+    cov_matrix = cov_matrix_adjusted(data_to_use, cov_matrix)
+    
+    for current_date in stqdm(dates, desc="Backtesting..."):
+
+        # Step 1: Calculate portfolio return using current weights
+        if weights is not None:
+            portfolio_return = np.dot(weights, returns.loc[current_date])
+            
+            # Adjust for transaction fees if this is a rebalancing date
+            if last_optimization_date == current_date and include_transaction_fees:
+                portfolio_return -= fees
+            
+            # Update portfolio value
+            portfolio_value *= (1 + portfolio_return)
+            portfolio_returns.append(portfolio_return)
+            portfolio_values.append(portfolio_value)
+        else:
+            # No investment yet
+            portfolio_returns.append(0.0)
+            portfolio_values.append(portfolio_value)
+
+        # Step 2: Decide whether to rebalance or proportionally adjust weights for the next period
+        if (last_optimization_date is None) or (current_date >= next_rebal_date):
+
+            # Define the optimization window
+            window_start = current_date - relativedelta(months=window_size_months)
+            window_end = current_date - relativedelta(days=1)  # Up to the previous month
+            
+            # Get the windowed returns
+            if not use_sentiment:
+                window_returns = returns.loc[window_start:window_end]
+                mean_returns = window_returns.mean()
+            else:
+                mu_bar = black_litterman_mu(data_to_use.loc[window_start:window_end], market_caps_data.loc[window_start:window_end], full_assets, full_mean_returns, full_cov_matrix_adjusted, cov_matrix, assets, constraints)
+                mean_returns = mu_bar
+
+            # Perform Optimization
+            if not mean_returns.empty:
+            
+                st.write(f"current date : {current_date}")
+
+                if selected_objective == "Maximum Sharpe Ratio Portfolio":
+                    result = optimize_sharpe_portfolio(
+                        data_to_use,
+                        mean_returns,
+                        cov_matrix,
+                        constraints["long_only"],
+                        constraints["min_weight_value"],
+                        constraints["max_weight_value"],
+                        constraints["leverage_limit"],
+                        constraints["leverage_limit_value"],
+                        constraints["leverage_limit_constraint_type"],
+                        constraints["net_exposure"],
+                        constraints["net_exposure_value"],
+                        constraints["net_exposure_constraint_type"],
+                        constraints["risk_free_rate"],
+                        constraints["include_risk_free_asset"],
+                        constraints["include_transaction_fees"],
+                        constraints["fees"],
+                        risk_aversion,
+                    )
+
+                elif selected_objective == "Minimum Global Variance Portfolio":
+                    result = optimize_min_variance_portfolio(
+                        data_to_use,
+                        mean_returns,
+                        cov_matrix,
+                        constraints["long_only"],
+                        constraints["min_weight_value"],
+                        constraints["max_weight_value"],
+                        constraints["leverage_limit"],
+                        constraints["leverage_limit_value"],
+                        constraints["leverage_limit_constraint_type"],
+                        constraints["net_exposure"],
+                        constraints["net_exposure_value"],
+                        constraints["net_exposure_constraint_type"],
+                        constraints["include_transaction_fees"],
+                        constraints["fees"],
+                    )
+                elif selected_objective == "Maximum Diversification Portfolio":
+                    result = optimize_max_diversification_portfolio(
+                        data_to_use,
+                        mean_returns,
+                        cov_matrix,
+                        constraints["long_only"],
+                        constraints["min_weight_value"],
+                        constraints["max_weight_value"],
+                        constraints["leverage_limit"],
+                        constraints["leverage_limit_value"],
+                        constraints["leverage_limit_constraint_type"],
+                        constraints["net_exposure"],
+                        constraints["net_exposure_value"],
+                        constraints["net_exposure_constraint_type"],
+                    )
+                elif selected_objective == "Equally Weighted Risk Contribution Portfolio":
+                    result = optimize_erc_portfolio(
+                        data_to_use,
+                        mean_returns,
+                        cov_matrix,
+                        constraints["long_only"],
+                        constraints["min_weight_value"],
+                        constraints["max_weight_value"],
+                        constraints["leverage_limit"],
+                        constraints["leverage_limit_value"],
+                        constraints["leverage_limit_constraint_type"],
+                        constraints["net_exposure"],
+                        constraints["net_exposure_value"],
+                        constraints["net_exposure_constraint_type"],
+                    )
+                elif selected_objective == "Inverse Volatility Portfolio":
+                    result = optimize_inverse_volatility_portfolio(
+                        data_to_use,
+                        mean_returns,
+                        cov_matrix,
+                        constraints["min_weight_value"],
+                        constraints["max_weight_value"],
+                        constraints["leverage_limit"],
+                        constraints["leverage_limit_value"],
+                    )
+                else:
+                    st.error("Invalid objective selected.")
+                    return
+            
+                # Depending on what is in the result dictionary, process accordingly
+                if result["weights"] is not None:
+                    new_weights = result["weights"]
+                elif result.get("max_sharpe_weights") is not None:
+                    new_weights = result["max_sharpe_weights"]
+                else:
+                    st.error("No weights found in the result.")
+                    return
+
+                if new_weights is None:
+                    st.error("Optimization failed to return weights.")
+                    return
+                
+                # Set weights for the next period
+                weights = new_weights
+                
+                last_optimization_date = current_date
+                next_rebal_date = current_date + relativedelta(months=rebal_freq_months)
+        else:
+            # Proportional rebalance based on performance
+            if weights is not None:
+                # Calculate asset returns for the current month
+                monthly_return = returns.loc[current_date]
+                # Update weights proportionally based on returns
+                new_weights = weights * (1 + monthly_return)
+                # Handle cases where the sum might be zero
+                if new_weights.sum() == 0:
+                    st.error(f"Sum of new weights is zero on {current_date}.")
+                    return
+                # Normalize weights to sum to 1 (or to the net exposure value if constraints are applied)
+                if constraints.get("net_exposure", False):
+                    net_exposure_val = constraints.get("net_exposure_value", 1.0)
+                    net_exposure_type = constraints.get("net_exposure_constraint_type", "equality")
+                    
+                    if net_exposure_type == "Equality":
+                        # Scale weights to exactly match the net exposure value
+                        new_weights = new_weights / new_weights.sum() * net_exposure_val
+                    elif net_exposure_type == "Inequality":
+                        # Ensure net exposure does not exceed the specified maximum
+                        current_net_exposure = new_weights.sum()
+                        if current_net_exposure > net_exposure_val:
+                            new_weights = new_weights / current_net_exposure * net_exposure_val
+                        # Else, keep as is
+                    else:
+                        st.error(f"Unknown net exposure constraint type: {net_exposure_type}")
+                        return
+                else:
+                    # If no net exposure constraints, normalize to sum to 1
+                    new_weights /= new_weights.sum()
+    
+    
+    # Create a Series for cumulative returns
+    portfolio_cum_returns = pd.Series(portfolio_values, index=dates[:len(portfolio_values)])
+    
+    # Calculate performance metrics
+    metrics = {}
+    cumulative_return = (portfolio_cum_returns.iloc[-1] / initial_value) - 1
+    metrics['Cumulative Return'] = cumulative_return
+    
+    # Annualized Return
+    num_years = (dates[-1] - dates[0]).days / 365.25
+    if num_years > 0:
+        metrics['Annualized Return'] = (portfolio_cum_returns.iloc[-1] / initial_value) ** (1 / num_years) - 1
+    else:
+        metrics['Annualized Return'] = np.nan
+    
+    # Annualized Volatility
+    if portfolio_returns:
+        metrics['Annualized Volatility'] = np.std(portfolio_returns) * np.sqrt(12)
+    else:
+        metrics['Annualized Volatility'] = np.nan
+    
+    # Sharpe Ratio
+    if metrics['Annualized Volatility'] != 0 and not np.isnan(metrics['Annualized Volatility']):
+        metrics['Sharpe Ratio'] = (metrics['Annualized Return'] - risk_free_rate) / metrics['Annualized Volatility']
+    else:
+        metrics['Sharpe Ratio'] = np.nan
+    
+    # Sortino Ratio
+    if portfolio_returns:
+        downside_returns = [r for r in portfolio_returns if r < 0]
+        if downside_returns:
+            downside_std = np.std(downside_returns) * np.sqrt(12)
+            metrics['Sortino Ratio'] = (metrics['Annualized Return'] - risk_free_rate) / downside_std
+        else:
+            metrics['Sortino Ratio'] = np.nan
+    else:
+        metrics['Sortino Ratio'] = np.nan
+    
+    return portfolio_cum_returns, metrics
 
 # -------------------------------
 # 9. Process Optimization Result

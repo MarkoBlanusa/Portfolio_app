@@ -4444,6 +4444,8 @@ def run_backtest(
 
     for current_date in stqdm(dates, desc="Backtesting..."):
 
+        st.write(current_date)
+
         # Step 1: Calculate portfolio return using current weights
         if weights is not None:
             portfolio_return = np.dot(weights, returns.loc[current_date])
@@ -4795,7 +4797,7 @@ def process_optimization_result(result, data, selected_objective):
 
     # Compute the total transactions costs
     if include_transaction_fees and not portfolio_return_net:
-        total_transaction_cost = np.sum(np.abs(weights)) * fees
+        total_transaction_cost = np.sum(np.abs(weights)) * fees * 12
     else:
         total_transaction_cost = 0.0
 
@@ -4829,7 +4831,7 @@ def process_optimization_result(result, data, selected_objective):
 
         if include_transaction_fees:
             st.write(
-                f"Total Transaction Costs: {(np.sum(np.abs(weights)) * fees * 12):.2%}"
+                f"Total Annualized Transaction Costs: {(np.sum(np.abs(weights)) * fees * 12):.2%}"
             )
             st.write(f"Net Expected Portfolio Return: {net_expected_return:.2%}")
             st.write(f"Net Sharpe Ratio: {net_sharpe_ratio:.2f}")

@@ -8,4 +8,5 @@ seaborn>=0.13.2
 scipy>=1.13.0
 cvxpy>=1.5.3
 PyPortfolioOpt
+scikit-learn
 python-dateutil>=2.9.0

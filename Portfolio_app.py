@@ -2917,8 +2917,6 @@ def adjust_covariance_matrix(cov_matrix, delta=1e-5):
         return cov_matrix_adjusted
 
     else:
-        # Inform the user
-        st.info("Covariance matrix is PD.")
 
         return cov_matrix
 

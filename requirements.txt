@@ -1,12 +1,20 @@
-streamlit>=1.39.0
-pandas>=2.2.3
-numpy>=1.26.0
-stqdm>=0.0.5
-matplotlib>=3.8.4
-plotly>=5.24.1
-seaborn>=0.13.2
-scipy>=1.13.0
-cvxpy>=1.5.3
+# Streamlit and Core Libraries
+streamlit==1.39.0
+pandas==2.2.3
+numpy==1.26.4
+stqdm==0.0.5
+matplotlib==3.8.4
+plotly==5.24.1
+seaborn==0.13.2
+
+# Optimization and Financial Libraries
+scipy==1.13.0
+cvxpy==1.5.3
 PyPortfolioOpt==1.5.5
-scikit-learn
-python-dateutil>=2.9.0
+scikit-learn==1.4.2
+
+# Date and Time Handling
+python-dateutil==2.9.0
+
+# Additional Dependencies (If Needed)
+# Add any other libraries your app might require below

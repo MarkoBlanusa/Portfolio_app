@@ -4444,8 +4444,6 @@ def run_backtest(
 
     for current_date in stqdm(dates, desc="Backtesting..."):
 
-        st.write(current_date)
-
         # Step 1: Calculate portfolio return using current weights
         if weights is not None:
             portfolio_return = np.dot(weights, returns.loc[current_date])

@@ -1117,7 +1117,7 @@ def visualize_dataset(top_n_countries=15):
         )
 
         # Add a slider to select the year
-        available_years = [str(year) for year in range(1999, 2022)]
+        available_years = [str(year) for year in range(2005, 2022)]
         selected_year = st.sidebar.selectbox(
             "Select Year for Carbon Data",
             options=available_years,
@@ -1686,6 +1686,8 @@ def efficient_frontier_page():
         st.session_state["frontier_volatility"] = None
         st.session_state["frontier_weights"] = None
         st.session_state["case_3"] = False
+        st.session_state["mean_returns"] = None
+        st.session_state["cov_matrix"] = None
         st.rerun()
     if nav_view_visualization:
         st.session_state["current_page"] = "Data Visualization"
@@ -1693,6 +1695,8 @@ def efficient_frontier_page():
         st.session_state["frontier_volatility"] = None
         st.session_state["frontier_weights"] = None
         st.session_state["case_3"] = False
+        st.session_state["mean_returns"] = None
+        st.session_state["cov_matrix"] = None
         st.rerun()
     if nav_return_optimization:
         st.session_state["current_page"] = "Optimization"
@@ -1700,13 +1704,16 @@ def efficient_frontier_page():
         st.session_state["frontier_volatility"] = None
         st.session_state["frontier_weights"] = None
         st.session_state["case_3"] = False
+        st.session_state["mean_returns"] = None
+        st.session_state["cov_matrix"] = None
         st.rerun()
     if nav_backtest:
         st.session_state["current_page"] = "Backtesting"
         st.session_state["frontier_returns"] = None
         st.session_state["frontier_volatility"] = None
         st.session_state["frontier_weights"] = None
-        st.session_state["case_3"] = False
+        st.session_state["mean_returns"] = None
+        st.session_state["cov_matrix"] = None
         st.rerun()
 
     # Check if optimization has been run
@@ -1946,6 +1953,8 @@ def backtesting_page():
         st.session_state["frontier_volatility"] = None
         st.session_state["frontier_weights"] = None
         st.session_state["case_3"] = False
+        st.session_state["mean_returns"] = None
+        st.session_state["cov_matrix"] = None
         st.rerun()
     if nav_view_visualization:
         st.session_state["current_page"] = "Data Visualization"
@@ -1953,6 +1962,8 @@ def backtesting_page():
         st.session_state["frontier_volatility"] = None
         st.session_state["frontier_weights"] = None
         st.session_state["case_3"] = False
+        st.session_state["mean_returns"] = None
+        st.session_state["cov_matrix"] = None
         st.rerun()
     if nav_return_optimization:
         st.session_state["current_page"] = "Optimization"
@@ -1960,12 +1971,16 @@ def backtesting_page():
         st.session_state["frontier_volatility"] = None
         st.session_state["frontier_weights"] = None
         st.session_state["case_3"] = False
+        st.session_state["mean_returns"] = None
+        st.session_state["cov_matrix"] = None
         st.rerun()
     if nav_backtest:
         st.session_state["current_page"] = "Backtesting"
         st.session_state["frontier_returns"] = None
         st.session_state["frontier_volatility"] = None
         st.session_state["frontier_weights"] = None
+        st.session_state["mean_returns"] = None
+        st.session_state["cov_matrix"] = None
         st.rerun()
 
     # Check if optimization has been run
@@ -2787,6 +2802,9 @@ def filter_stocks(
         all_isins = list(set(all_isins).intersection(set(companies_isins)))
         st.write(f"Total number of stocks after company filtering: {len(all_isins)}")
 
+    data_filtered = data[all_isins]
+    market_caps_filtered = market_caps_data[all_isins]
+
     # Apply date filtering to data_filtered and market_caps_filtered
     if date_range_filter and start_date and end_date:
         start_date = pd.to_datetime(start_date)
@@ -2808,6 +2826,13 @@ def filter_stocks(
             f"Total number of observations after using sentiment data: {len(data_filtered)}"
         )
 
+    # Ensure that data_filtered and market_caps_filtered are not empty after date filtering
+    if data_filtered.empty or market_caps_filtered.empty:
+        st.warning("No data available after applying date filters.")
+        return pd.DataFrame(), pd.DataFrame()
+
+    # Determine Available Years Based on Date Filtering
+    available_years = data_filtered.index.year.unique().tolist()
 
     # Apply Carbon Footprint Constraint
     if (
@@ -2822,17 +2847,22 @@ def filter_stocks(
             "Scope 3": "TC_Scope3",
         }
 
-        # Identify all relevant scope columns across all years
-        scope_columns = [
-            col for col in static_data.columns
-            if any(col.startswith(f"{scope_mapping[scope]}_") for scope in selected_carbon_scopes)
-        ]
+        # Identify all relevant scope columns across the available years
+        scope_columns = []
+        for scope in selected_carbon_scopes:
+            prefix = scope_mapping.get(scope, None)
+            if prefix:
+                for year in available_years:
+                    col_name = f"{prefix}_{year}"
+                    if col_name in static_data.columns:
+                        scope_columns.append(col_name)
 
         if not scope_columns:
-            st.error("No carbon scope columns found for the selected scopes.")
-            return pd.DataFrame()  # Return empty DataFrame
+            st.error("No carbon scope columns found for the selected scopes and available years.")
+            # Return empty DataFrames for both filtered data and market caps
+            return pd.DataFrame(), pd.DataFrame()
 
-        # Calculate the average emissions across all years for the selected scopes
+        # Calculate the average emissions across the available years for the selected scopes
         static_data["Selected_Scopes_Avg_Emission"] = static_data[scope_columns].mean(axis=1)
 
         # Filter companies based on the average carbon limit
@@ -2842,20 +2872,20 @@ def filter_stocks(
 
         carbon_isins = companies_carbon["ISIN"].tolist()
         all_isins = list(set(all_isins).intersection(set(carbon_isins)))
-        st.write(
-            f"Total number of stocks after carbon footprint filtering: {len(all_isins)}"
-        )
+        st.write(f"Total number of stocks after carbon footprint filtering: {len(all_isins)}")
 
-    data_filtered = data[all_isins]
-    market_caps_filtered = market_caps_data[all_isins]
 
     if not all_isins:
         st.warning("No stocks meet the selected filtering criteria.")
         return pd.DataFrame(), pd.DataFrame()  # Return empty DataFrame
 
-    # Ensure that data_filtered and market_caps_filtered are not empty after date filtering
+    # Apply All Filters to Data
+    data_filtered = data_filtered[all_isins]
+    market_caps_filtered = market_caps_filtered[all_isins]
+    
+    # Final Check if Filtered Data is Empty
     if data_filtered.empty or market_caps_filtered.empty:
-        st.warning("No data available after applying date filters.")
+        st.warning("No data available after applying all filters.")
         return pd.DataFrame(), pd.DataFrame()
 
     st.session_state["filtered_data"] = data_filtered
@@ -5013,7 +5043,7 @@ def plot_efficient_frontier(
             np.dot(tangency_weights.T, np.dot(cov_matrix, tangency_weights))
         )
         optimized_costs = 0
-        if result.get("max_sharpe_returns"):
+        if st.session_state["case_3"]:
             optimized_returns = result.get("max_sharpe_returns")
             optimized_vol = result.get("max_sharpe_volatility")
         else:

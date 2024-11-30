@@ -913,17 +913,6 @@ def visualize_dataset(top_n_countries=15):
     data_to_visualize = data.copy()
     returns = data_to_visualize.pct_change().dropna()
 
-    """
-    Visualize dataset with descriptive statistics and meaningful interactive graphs.
-    
-    Parameters:
-    - data (pd.DataFrame): The dataset to visualize (filtered or unfiltered).
-                           Columns should be ISINs representing different stocks.
-    - static_data (pd.DataFrame): Static metadata for stocks, containing at least
-                                  'ISIN', 'Region', 'GICSSectorName', and 'Country' columns.
-    - top_n_countries (int): Number of top countries to display in the country distribution plot.
-    """
-
     # Display explanatory text about carbon concepts
     st.markdown(
         """
@@ -3915,9 +3904,8 @@ def black_litterman_mu(
     assets,
     constraints,
 ):
-    
-    risk_free_rate = constraints.get("risk_free_rate", 0.0)
 
+    risk_free_rate = constraints.get("risk_free_rate", 0.0)
 
     sentiment_window = constraints.get("sentiment_window", 3)
     sentiment_count_threshold = constraints.get("sentiment_count_threshold", 100)
@@ -4189,15 +4177,7 @@ def run_optimization(selected_objective, constraints):
     assets = mean_returns.index.tolist()
 
     # List of all assets in the full dataset
-    full_assets = data.columns.tolist()
-
-    if len(data_to_use) / len(cov_matrix) < 2:
-
-        cov_matrix = risk_models.CovarianceShrinkage(
-            data_to_use, frequency=12
-        ).ledoit_wolf()
-
-        st.info("Covariance matrix shrinked using Ledoit_Wolf. ")
+    full_assets = full_data.columns.tolist()
 
     # Adjust covariance matrix
     cov_matrix_adjusted = adjust_covariance_matrix(cov_matrix.values)
@@ -4205,9 +4185,7 @@ def run_optimization(selected_objective, constraints):
         cov_matrix_adjusted, index=cov_matrix.index, columns=cov_matrix.columns
     )
 
-    full_cov_matrix_adjusted = risk_models.CovarianceShrinkage(
-        data, frequency=12
-    ).ledoit_wolf()
+    full_cov_matrix_adjusted = risk_models.CovarianceShrinkage(full_data).ledoit_wolf()
     full_cov_matrix_adjusted = adjust_covariance_matrix(full_cov_matrix_adjusted.values)
     full_cov_matrix_adjusted = pd.DataFrame(
         full_cov_matrix_adjusted,
@@ -4435,9 +4413,9 @@ def run_backtest(
     assets = mean_returns.index.tolist()
 
     # List of all assets in the full dataset
-    full_assets = data.columns.tolist()
+    full_assets = full_data.columns.tolist()
 
-    full_cov_matrix_adjusted = risk_models.CovarianceShrinkage(data).ledoit_wolf()
+    full_cov_matrix_adjusted = risk_models.CovarianceShrinkage(full_data).ledoit_wolf()
     full_cov_matrix_adjusted = adjust_covariance_matrix(full_cov_matrix_adjusted.values)
     full_cov_matrix_adjusted = pd.DataFrame(
         full_cov_matrix_adjusted,
@@ -4478,10 +4456,10 @@ def run_backtest(
             portfolio_value *= 1 + portfolio_return
             portfolio_returns.append(portfolio_return)
             portfolio_values.append(portfolio_value)
-        else:
-            # No investment yet
-            portfolio_returns.append(0.0)
-            portfolio_values.append(portfolio_value)
+        # else:
+        #     # No investment yet
+        #     portfolio_returns.append(0.0)
+        #     portfolio_values.append(portfolio_value)
 
         # Step 2: Decide whether to rebalance or proportionally adjust weights for the next period
         if (last_optimization_date is None) or (current_date >= next_rebal_date):

@@ -1,0 +1,13 @@
+streamlit
+pandas
+numpy
+stqdm
+matplotlib
+plotly
+seaborn
+scipy
+cvxpy
+pypfopt
+python-dateutil
+base64
+

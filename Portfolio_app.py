@@ -1509,7 +1509,6 @@ def visualize_dataset(top_n_countries=15):
             st.plotly_chart(fig_line, use_container_width=True)
 
 
-
 # -------------------------------
 # 3. Optimization Page
 # -------------------------------
@@ -1712,8 +1711,6 @@ def efficient_frontier_page():
         st.session_state["frontier_returns"] = None
         st.session_state["frontier_volatility"] = None
         st.session_state["frontier_weights"] = None
-        st.session_state["mean_returns"] = None
-        st.session_state["cov_matrix"] = None
         st.rerun()
 
     # Check if optimization has been run
@@ -1945,7 +1942,7 @@ def backtesting_page():
     nav_return_optimization = st.button(
         "Return to Optimization", key="ef_return_optimization_top"
     )
-    nav_backtest = st.button("Backesting page", key="ef_backtest_top")
+    nav_efficient_frontier = st.button("Efficient Frontier", key="bs_ef_top")
 
     if nav_return_quiz:
         st.session_state["current_page"] = "Quiz"
@@ -1974,13 +1971,11 @@ def backtesting_page():
         st.session_state["mean_returns"] = None
         st.session_state["cov_matrix"] = None
         st.rerun()
-    if nav_backtest:
-        st.session_state["current_page"] = "Backtesting"
+    if nav_efficient_frontier:
+        st.session_state["current_page"] = "Efficient Frontier"
         st.session_state["frontier_returns"] = None
         st.session_state["frontier_volatility"] = None
         st.session_state["frontier_weights"] = None
-        st.session_state["mean_returns"] = None
-        st.session_state["cov_matrix"] = None
         st.rerun()
 
     # Check if optimization has been run
@@ -2581,7 +2576,7 @@ def display_constraints():
     # Initialize variables
     carbon_limit = None
     selected_carbon_scopes = []
-    
+
     if carbon_footprint:
         st.subheader("Carbon Footprint Constraints")
         # Allow user to select which scopes to include
@@ -2591,7 +2586,7 @@ def display_constraints():
             options=carbon_scopes,
             key="selected_carbon_scopes",
         )
-        
+
         if selected_carbon_scopes:
             # Carbon limit input
             carbon_limit = st.number_input(
@@ -2603,13 +2598,14 @@ def display_constraints():
                 help="This is the maximum average carbon intensity across the selected scopes and time range.",
             )
         else:
-            st.warning("Please select at least one carbon scope to apply the constraint.")
-    
+            st.warning(
+                "Please select at least one carbon scope to apply the constraint."
+            )
+
     else:
         # Reset session state when carbon constraints are disabled
         st.session_state["selected_carbon_scopes"] = []
         st.session_state["carbon_limit"] = None
-
 
     # Collect constraints into a dictionary
     constraints = {
@@ -2814,7 +2810,7 @@ def filter_stocks(
         st.write(
             f"Total number of observations after date filtering: {len(data_filtered)}"
         )
-    elif use_sentiment:
+    if use_sentiment:
         # Cap the end date to the sentiment data's max date
         sentiment_max_date = sentiment_data["Date"].max()
         sentiment_min_date = sentiment_data["Date"].min()
@@ -2835,11 +2831,7 @@ def filter_stocks(
     available_years = data_filtered.index.year.unique().tolist()
 
     # Apply Carbon Footprint Constraint
-    if (
-        carbon_footprint
-        and carbon_limit is not None
-        and selected_carbon_scopes
-    ):
+    if carbon_footprint and carbon_limit is not None and selected_carbon_scopes:
         # Define the scope mapping
         scope_mapping = {
             "Scope 1": "TC_Scope1",
@@ -2858,12 +2850,16 @@ def filter_stocks(
                         scope_columns.append(col_name)
 
         if not scope_columns:
-            st.error("No carbon scope columns found for the selected scopes and available years.")
+            st.error(
+                "No carbon scope columns found for the selected scopes and available years."
+            )
             # Return empty DataFrames for both filtered data and market caps
             return pd.DataFrame(), pd.DataFrame()
 
         # Calculate the average emissions across the available years for the selected scopes
-        static_data["Selected_Scopes_Avg_Emission"] = static_data[scope_columns].mean(axis=1)
+        static_data["Selected_Scopes_Avg_Emission"] = static_data[scope_columns].mean(
+            axis=1
+        )
 
         # Filter companies based on the average carbon limit
         companies_carbon = static_data[
@@ -2872,8 +2868,9 @@ def filter_stocks(
 
         carbon_isins = companies_carbon["ISIN"].tolist()
         all_isins = list(set(all_isins).intersection(set(carbon_isins)))
-        st.write(f"Total number of stocks after carbon footprint filtering: {len(all_isins)}")
-
+        st.write(
+            f"Total number of stocks after carbon footprint filtering: {len(all_isins)}"
+        )
 
     if not all_isins:
         st.warning("No stocks meet the selected filtering criteria.")
@@ -2882,7 +2879,7 @@ def filter_stocks(
     # Apply All Filters to Data
     data_filtered = data_filtered[all_isins]
     market_caps_filtered = market_caps_filtered[all_isins]
-    
+
     # Final Check if Filtered Data is Empty
     if data_filtered.empty or market_caps_filtered.empty:
         st.warning("No data available after applying all filters.")
@@ -2891,7 +2888,6 @@ def filter_stocks(
     st.session_state["filtered_data"] = data_filtered
     st.session_state["market_caps_filtered"] = market_caps_filtered
     return data_filtered, market_caps_filtered
-
 
 
 # Function to calculate Sortino Ratio
@@ -3065,7 +3061,7 @@ def optimize_sharpe_portfolio(
             result["status"] = "failure"
 
     else:
-        if (num_assets < 400 and include_risk_free_asset):
+        if num_assets < 400 and include_risk_free_asset:
             # **Case 2: Leverage Limit with Less Than 600 Assets**
             # Use non-convex optimizer from PyPortfolioOpt
             try:
@@ -3088,8 +3084,7 @@ def optimize_sharpe_portfolio(
                     constraints.append(
                         {
                             "type": type_leverage,
-                            "fun": lambda x: leverage_limit_value
-                            - (np.sum(np.abs(x))),
+                            "fun": lambda x: leverage_limit_value - (np.sum(np.abs(x))),
                         }
                     )
 
@@ -3098,8 +3093,7 @@ def optimize_sharpe_portfolio(
                     constraints.append(
                         {
                             "type": type_net_exposure,
-                            "fun": lambda x: net_exposure_value
-                            - (np.sum(x)),
+                            "fun": lambda x: net_exposure_value - (np.sum(x)),
                         }
                     )
                 else:
@@ -3304,9 +3298,7 @@ def optimize_sharpe_portfolio(
                 portfolio_variance = cp.quad_form(
                     w, cov_matrix_adjusted, assume_PSD=True
                 )
-                utility = (
-                    portfolio_return - 0.5 * risk_aversion * portfolio_variance
-                )
+                utility = portfolio_return - 0.5 * risk_aversion * portfolio_variance
                 objective = cp.Maximize(utility)
 
                 # Solve the problem
@@ -3457,8 +3449,7 @@ def optimize_max_diversification_portfolio(
         constraints.append(
             {
                 "type": type_leverage,
-                "fun": lambda x: leverage_limit_value
-                - np.sum(np.abs(x)),
+                "fun": lambda x: leverage_limit_value - np.sum(np.abs(x)),
             }
         )
 
@@ -3467,8 +3458,7 @@ def optimize_max_diversification_portfolio(
         constraints.append(
             {
                 "type": type_net_exposure,
-                "fun": lambda x: net_exposure_value
-                - (np.sum(x)),
+                "fun": lambda x: net_exposure_value - (np.sum(x)),
             }
         )
     else:
@@ -3583,7 +3573,7 @@ def optimize_erc_portfolio(
     net_exposure_value,
     net_exposure_constraint_type,
 ):
-    
+
     num_assets = len(mean_returns)
     assets = mean_returns.index.tolist()
 
@@ -3610,8 +3600,7 @@ def optimize_erc_portfolio(
         constraints.append(
             {
                 "type": type_leverage,
-                "fun": lambda x: leverage_limit_value
-                - np.sum(np.abs(x)),
+                "fun": lambda x: leverage_limit_value - np.sum(np.abs(x)),
             }
         )
 
@@ -3620,8 +3609,7 @@ def optimize_erc_portfolio(
         constraints.append(
             {
                 "type": type_net_exposure,
-                "fun": lambda x: net_exposure_value
-                - np.sum(x),
+                "fun": lambda x: net_exposure_value - np.sum(x),
             }
         )
     else:
@@ -3749,10 +3737,8 @@ def optimize_inverse_volatility_portfolio(
             # Ensure net exposure does not exceed the specified maximum
             current_net_exposure = new_weights.sum()
             if current_net_exposure > net_exposure_value:
-                new_weights = (
-                    new_weights / current_net_exposure * net_exposure_value
-                )
-        
+                new_weights = new_weights / current_net_exposure * net_exposure_value
+
         # Normalize weights to sum to 1 (or to the net exposure value if constraints are applied)
     if leverage_limit:
 
@@ -3763,12 +3749,12 @@ def optimize_inverse_volatility_portfolio(
             # Scale weights to exactly match the leverage limit
             if current_leverage != 0:
                 new_weights = new_weights / current_leverage * leverage_limit_value
-            
+
         elif leverage_limit_constraint_type == "Inequality constraint":
             # Ensure leverage does not exceed the specified maximum
             if current_leverage > leverage_limit_value:
                 new_weights = new_weights / current_leverage * leverage_limit_value
-            
+
     else:
         if not net_exposure_value:
             # If neither net exposure nor leverage constraints, normalize to sum to 1
@@ -3776,7 +3762,6 @@ def optimize_inverse_volatility_portfolio(
 
     # Apply constraints
     weights = np.clip(weights, min_weight, max_weight)
-    
 
     result["weights"] = weights
     result["mean_returns"] = mean_returns
@@ -3930,6 +3915,10 @@ def black_litterman_mu(
     assets,
     constraints,
 ):
+    
+    risk_free_rate = constraints.get("risk_free_rate", 0.0)
+
+
     sentiment_window = constraints.get("sentiment_window", 3)
     sentiment_count_threshold = constraints.get("sentiment_count_threshold", 100)
 
@@ -4164,7 +4153,29 @@ def run_optimization(selected_objective, constraints):
     else:
         risk_aversion = 1  # Default value
 
-    full_returns = data.pct_change().dropna()
+    # Apply date filtering to data_filtered and market_caps_filtered
+    date_range_filter = constraints.get("date_range_filter", False)
+    start_date = constraints.get("start_date", None)
+    end_date = constraints.get("end_date", None)
+    use_sentiment = constraints.get("use_sentiment", False)
+
+    full_data = data.copy()
+    full_market_caps = market_caps_data.copy()
+
+    if date_range_filter and start_date and end_date:
+        start_date = pd.to_datetime(start_date)
+        end_date = pd.to_datetime(end_date)
+        full_data = data.loc[start_date:end_date]
+        full_market_caps = market_caps_data.loc[start_date:end_date]
+
+    if use_sentiment:
+        # Cap the end date to the sentiment data's max date
+        sentiment_max_date = sentiment_data["Date"].max()
+        sentiment_min_date = sentiment_data["Date"].min()
+        full_data = data.loc[sentiment_min_date:sentiment_max_date]
+        full_market_caps = market_caps_data.loc[sentiment_min_date:sentiment_max_date]
+
+    full_returns = full_data.pct_change().dropna()
     full_mean_returns = full_returns.mean()
 
     full_cov_matrix = full_returns.cov()
@@ -4208,7 +4219,7 @@ def run_optimization(selected_objective, constraints):
 
         mu_bar = black_litterman_mu(
             data_to_use,
-            market_caps_data,
+            full_market_caps,
             full_assets,
             full_mean_returns,
             full_cov_matrix_adjusted,
@@ -4372,7 +4383,6 @@ def run_backtest(
     else:
         data_to_use = data
 
-
     if "market_caps_filtered" in st.session_state:
         market_caps_to_use = st.session_state["market_caps_filtered"]
     else:
@@ -4384,12 +4394,34 @@ def run_backtest(
     else:
         risk_aversion = 1  # Default value
 
+    # Apply date filtering to data_filtered and market_caps_filtered
+    date_range_filter = constraints.get("date_range_filter", False)
+    start_date = constraints.get("start_date", None)
+    end_date = constraints.get("end_date", None)
+    use_sentiment = constraints.get("use_sentiment", False)
+
+    full_data = data.copy()
+    full_market_caps = market_caps_data.copy()
+
+    if date_range_filter and start_date and end_date:
+        start_date = pd.to_datetime(start_date)
+        end_date = pd.to_datetime(end_date)
+        full_data = data.loc[start_date:end_date]
+        full_market_caps = market_caps_data.loc[start_date:end_date]
+
+    if use_sentiment:
+        # Cap the end date to the sentiment data's max date
+        sentiment_max_date = sentiment_data["Date"].max()
+        sentiment_min_date = sentiment_data["Date"].min()
+        full_data = data.loc[sentiment_min_date:sentiment_max_date]
+        full_market_caps = market_caps_data.loc[sentiment_min_date:sentiment_max_date]
+
     risk_free_rate = constraints.get("risk_free_rate", 0.0)
     include_transaction_fees = constraints.get("include_transaction_fees", False)
     fees = constraints.get("fees", False)
     use_sentiment = constraints.get("use_sentiment", False)
 
-    full_returns = data.pct_change().dropna()
+    full_returns = full_data.pct_change().dropna()
     full_mean_returns = full_returns.mean()
 
     full_cov_matrix = full_returns.cov()
@@ -4427,6 +4459,9 @@ def run_backtest(
     last_optimization_date = None
     next_rebal_date = None
 
+    # Determine available years based on date filtering
+    available_years = data_to_use.index.year.unique().tolist()
+
     cov_matrix = cov_matrix_adjusted(data_to_use, cov_matrix)
 
     for current_date in stqdm(dates, desc="Backtesting..."):
@@ -4435,9 +4470,9 @@ def run_backtest(
         if weights is not None:
             portfolio_return = np.dot(weights, returns.loc[current_date])
 
-            # Adjust for transaction fees if this is a rebalancing date
-            if last_optimization_date == current_date and include_transaction_fees:
-                portfolio_return -= fees
+            # Calculate transaction costs based on the change in weights
+            transaction_cost = np.sum(np.abs(weights - weights_previous)) * fees
+            portfolio_return -= transaction_cost
 
             # Update portfolio value
             portfolio_value *= 1 + portfolio_return
@@ -4464,7 +4499,7 @@ def run_backtest(
             else:
                 mu_bar = black_litterman_mu(
                     data_to_use.loc[window_start:window_end],
-                    market_caps_data.loc[window_start:window_end],
+                    full_market_caps.loc[window_start:window_end],
                     full_assets,
                     full_mean_returns,
                     full_cov_matrix_adjusted,
@@ -4475,11 +4510,10 @@ def run_backtest(
                 mean_returns = mu_bar
 
             # Perform Optimization
-            if not mean_returns.empty:
+            if not mean_returns.empty and not cov_matrix.empty:
 
                 if selected_objective == "Maximum Sharpe Ratio Portfolio":
                     result = optimize_sharpe_portfolio(
-                        data_to_use,
                         mean_returns,
                         cov_matrix,
                         constraints["long_only"],
@@ -4500,7 +4534,6 @@ def run_backtest(
 
                 elif selected_objective == "Minimum Global Variance Portfolio":
                     result = optimize_min_variance_portfolio(
-                        data_to_use,
                         mean_returns,
                         cov_matrix,
                         constraints["long_only"],
@@ -4517,7 +4550,6 @@ def run_backtest(
                     )
                 elif selected_objective == "Maximum Diversification Portfolio":
                     result = optimize_max_diversification_portfolio(
-                        data_to_use,
                         mean_returns,
                         cov_matrix,
                         constraints["long_only"],
@@ -4534,7 +4566,6 @@ def run_backtest(
                     selected_objective == "Equally Weighted Risk Contribution Portfolio"
                 ):
                     result = optimize_erc_portfolio(
-                        data_to_use,
                         mean_returns,
                         cov_matrix,
                         constraints["long_only"],
@@ -4549,13 +4580,16 @@ def run_backtest(
                     )
                 elif selected_objective == "Inverse Volatility Portfolio":
                     result = optimize_inverse_volatility_portfolio(
-                        data_to_use,
                         mean_returns,
                         cov_matrix,
                         constraints["min_weight_value"],
                         constraints["max_weight_value"],
                         constraints["leverage_limit"],
                         constraints["leverage_limit_value"],
+                        constraints["leverage_limit_constraint_type"],
+                        constraints["net_exposure"],
+                        constraints["net_exposure_value"],
+                        constraints["net_exposure_constraint_type"],
                     )
                 else:
                     st.error("Invalid objective selected.")
@@ -4570,22 +4604,40 @@ def run_backtest(
                     st.error("No weights found in the result.")
                     return
 
-                if new_weights is None:
-                    st.error("Optimization failed to return weights.")
-                    return
+                if new_weights is not None:
+                    # Convert to Series for alignment
+                    new_weights = pd.Series(
+                        new_weights, index=mean_returns.index
+                    ).fillna(0)
 
-                # Set weights for the next period
-                weights = new_weights
+                    # Store previous weights for transaction cost calculation
+                    weights_previous = (
+                        weights.copy() if weights is not None else new_weights.copy()
+                    )
+
+                    # Normalize weights according to constraints
+                    # (Assuming constraints are already enforced in optimization functions)
+                    weights = new_weights.values
+                else:
+                    st.warning(
+                        f"Optimization failed on {current_date}. Maintaining previous weights."
+                    )
+                    # Optionally, keep previous weights or implement a fallback strategy
 
                 last_optimization_date = current_date
                 next_rebal_date = current_date + relativedelta(months=rebal_freq_months)
+            else:
+                st.warning(f"Insufficient data for optimization on {current_date}.")
+                # Optionally, skip rebalancing
+                continue
+
         else:
             # Proportional rebalance based on performance
             if weights is not None:
                 # Calculate asset returns for the current month
-                monthly_return = returns.loc[current_date]
+                current_returns = returns.loc[current_date]
                 # Update weights proportionally based on returns
-                new_weights = weights * (1 + monthly_return)
+                new_weights = weights * (1 + current_returns)
                 # Handle cases where the sum might be zero
                 if new_weights.sum() == 0:
                     st.error(f"Sum of new weights is zero on {current_date}.")
@@ -4613,7 +4665,7 @@ def run_backtest(
                             f"Unknown net exposure constraint type: {net_exposure_type}"
                         )
                         return
-                    
+
                     # Normalize weights to sum to 1 (or to the net exposure value if constraints are applied)
                 if constraints.get("leverage_limit", False):
                     leverage_limit_value = constraints.get("leverage_limit_value", 1.0)
@@ -4627,15 +4679,21 @@ def run_backtest(
                     if leverage_limit_constraint_type == "Equality constraint":
                         # Scale weights to exactly match the leverage limit
                         if current_leverage != 0:
-                            new_weights = new_weights / current_leverage * leverage_limit_value
+                            new_weights = (
+                                new_weights / current_leverage * leverage_limit_value
+                            )
                         else:
-                            st.error(f"Current leverage is zero on {current_date}. Cannot scale weights.")
+                            st.error(
+                                f"Current leverage is zero on {current_date}. Cannot scale weights."
+                            )
                             return
-                        
+
                     elif leverage_limit_constraint_type == "Inequality constraint":
                         # Ensure leverage does not exceed the specified maximum
                         if current_leverage > leverage_limit_value:
-                            new_weights = new_weights / current_leverage * leverage_limit_value
+                            new_weights = (
+                                new_weights / current_leverage * leverage_limit_value
+                            )
                         # Else, keep as is
                     else:
                         st.error(
@@ -4770,7 +4828,6 @@ def process_optimization_result(result, data, selected_objective):
     else:
         net_expected_return = portfolio_return - total_transaction_cost
         gross_portfolio_return = portfolio_return
-
 
     st.session_state["optimized_returns"] = portfolio_return
     st.session_state["optimized_volatility"] = portfolio_volatility

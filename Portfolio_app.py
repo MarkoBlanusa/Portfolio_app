@@ -34,6 +34,8 @@ import matplotlib.colors as mcolors
 import matplotlib.cm as cm
 from matplotlib.colors import LinearSegmentedColormap
 
+from PIL import Image
+
 
 # Decorations for buttons #
 global_button_css = """
@@ -275,9 +277,9 @@ assets = data.columns.tolist()
 
 
 def initialize_session_state():
-    pages = ["Quiz", "Data Visualization", "Optimization", "Efficient Frontier"]
+    pages = ["Introduction", "Quiz", "Data Visualization", "Optimization", "Efficient Frontier"]
     if "current_page" not in st.session_state:
-        st.session_state["current_page"] = "Quiz"
+        st.session_state["current_page"] = "Introduction"
 
     # Filters
     if "selected_regions" not in st.session_state:
@@ -323,7 +325,9 @@ initialize_session_state()
 def main():
 
     # Initialize current page in session state
-    if st.session_state["current_page"] == "Quiz":
+    if st.session_state["current_page"] == "Introduction":
+        introduction_page()
+    elif st.session_state["current_page"] == "Quiz":
         risk_aversion_quiz()
     elif st.session_state["current_page"] == "Data Visualization":
         data_visualization_page()
@@ -340,6 +344,125 @@ def main():
         display_weights_by_currency(st.session_state["weights"], static_data2)
     else:
         st.write("Page not found.")
+
+
+def introduction_page():
+    """
+    Renders the introduction page of the Portfolio Optimization Application.
+    """
+    # # Set the page configuration
+    # st.set_page_config(page_title="Portfolio Optimization Tool - Introduction", layout="wide")
+
+    # Title and Welcome Message
+    st.title("📈 Advanced Portfolio Optimization Tool")
+    st.markdown("""
+    **Welcome to the Advanced Portfolio Optimization Tool!**  
+    This application is designed to empower investors and financial enthusiasts with sophisticated tools to build, analyze, and optimize investment portfolios. Whether you're a seasoned investor or just starting out, our platform offers a comprehensive suite of features to enhance your investment strategy.
+    """)
+
+    # Add an introductory image or graphic (optional)
+    # Ensure you have an image named 'portfolio_intro.jpg' in the 'images' folder
+    # Uncomment the lines below if you have an appropriate image
+    # try:
+    #     intro_image = Image.open("images/portfolio_intro.jpg")
+    #     st.image(intro_image, use_column_width=True)
+    # except FileNotFoundError:
+    #     st.warning("Introductory image not found. Please ensure 'portfolio_intro.jpg' exists in the 'images' folder.")
+
+    st.markdown("---")  # Horizontal line separator
+
+    # Overview of Features
+    st.header("🔍 Overview of Features")
+    st.markdown("""
+    Our application offers a range of features tailored to meet your portfolio management needs:
+
+    - **🎯 Risk Aversion Approximation:** Determine your risk tolerance to align your investment strategy accordingly.
+    - **📊 Dataset Visualization:** Gain insights through interactive and customizable data visualizations.
+    - **⚙️ Portfolio Optimization:** Optimize your portfolio using various objectives such as Maximum Sharpe Ratio, Minimum Variance, and more.
+    - **🧠 Sentiment Data Integration:** Enhance decision-making by incorporating sentiment analysis into your portfolio construction.
+    - **📈 Efficient Frontiers:** Visualize efficient frontiers to understand the risk-return trade-offs of different portfolio allocations.
+    - **🔄 Backtesting:** Evaluate the performance of your strategies over historical data to ensure robustness.
+    """)
+
+    # How to Use the Application
+    st.header("🛠 How to Use This Application")
+    st.markdown("""
+    **Getting Started is Easy! Follow these steps:**
+
+    1. **📂 Use our Dataset:** Begin by selecting from predefined datasets.
+    2. **📈 Visualize Data:** Use our visualization tools to explore and understand your dataset.
+    3. **🔍 Approximate Risk Aversion:** Utilize the risk aversion tool to gauge your investment risk tolerance.
+    4. **⚙️ Optimize Portfolio:** Choose your optimization objective and set constraints to generate an optimal portfolio.
+    5. **🧠 Integrate Sentiment Data:** Incorporate sentiment analysis to refine your portfolio further.
+    6. **📈 Explore Efficient Frontiers:** Visualize efficient frontiers to comprehend the risk-return dynamics.
+    7. **🔄 Backtest Strategies:** Test your portfolio performance against historical data to validate your strategy.
+    8. **📥 Download Results:** Export your optimized portfolio and performance metrics for further analysis.
+    """)
+
+    st.markdown("  ")  # Horizontal line separator
+
+    # Add icons or images for each feature (optional)
+    # Could use columns to align icons with descriptions
+    # Example:
+    cols = st.columns(3)
+    with cols[0]:
+        st.image("Static/Risk.png", width=50)
+        st.markdown("**Risk Aversion Approximation**")
+    with cols[1]:
+        st.image("Static/data-visualization.png", width=50)
+        st.markdown("**Dataset Visualization**")
+    with cols[2]:
+        st.image("Static/Optimization.png", width=50)
+        st.markdown("**Portfolio Optimization**")
+
+    st.markdown("---")  # Horizontal line separator
+
+    # About Section
+    st.header("👥 About This Application")
+    st.markdown("""
+    **Developed by:**  
+    The Portfolio Optimization team (Group 1). Our mission is to provide advanced yet user-friendly tools that facilitate informed investment decisions.
+
+    **Purpose:**  
+    This application aims to bridge the gap between complex financial theories and practical investment strategies, making portfolio optimization accessible to everyone.
+
+    **Goals:**  
+    - Empower users with data-driven insights.
+    - Simplify the portfolio construction process.
+    - Enhance investment strategies with sentiment analysis.
+    - Provide reliable performance evaluations through backtesting.
+    """)
+
+    # References and Learning Resources
+    st.header("📚 References and Learning Resources")
+    st.markdown("""
+    Expand your knowledge with the following resources:
+
+    - [Modern Portfolio Theory](https://en.wikipedia.org/wiki/Modern_portfolio_theory)
+    - [Black-Litterman Model](https://www.investopedia.com/terms/b/blacklitterman-model.asp)
+    - [Sentiment Analysis in Finance](https://www.investopedia.com/articles/investing/082614/sentiment-analysis-how-it-helps-investors.asp)
+    - [PyPortfolioOpt Documentation](https://pyportfolioopt.readthedocs.io/en/latest/)
+    """)
+
+    # Disclaimer
+    st.markdown("""
+    ---
+    **Disclaimer:**  
+    This application is intended for informational and educational purposes only. It does not constitute financial advice. Users should consult with a financial professional before making investment decisions.
+    """)
+
+    # Footer (optional)
+    st.markdown("""
+    ---
+    &copy; 2024 Group 1 of Master in Finance. All rights reserved.
+    """)
+
+    if st.button("Go to risk averion quiz"):
+        # Navigate to Data Visualization page
+        st.session_state["current_page"] = "Quiz"
+        st.rerun()
+
+
 
 
 # -------------------------------
@@ -1667,6 +1790,7 @@ def efficient_frontier_page():
         "Return to Optimization", key="ef_return_optimization_top"
     )
     nav_backtest = st.button("Backesting page", key="ef_backtest_top")
+    nav_currency = st.button("Currency weights", key="bs_currency_weights")
 
     if nav_return_quiz:
         st.session_state["current_page"] = "Quiz"
@@ -1701,6 +1825,13 @@ def efficient_frontier_page():
         st.session_state["frontier_volatility"] = None
         st.session_state["frontier_weights"] = None
         st.rerun()
+    if nav_currency:
+        st.session_state["current_page"] = "Currency weight"
+        st.session_state["frontier_returns"] = None
+        st.session_state["frontier_volatility"] = None
+        st.session_state["frontier_weights"] = None
+        st.rerun()
+
 
     # Check if optimization has been run
     if not st.session_state.get("optimization_run", False):
@@ -1741,7 +1872,7 @@ def efficient_frontier_page():
     st.markdown("**Select the Range of Returns for the Efficient Frontier:**")
     return_range = st.slider(
         "Return Range (%)",
-        min_value=-float(max_return * 100),
+        min_value=-float(max_return * 100) * np.sum(np.abs(weights)),
         max_value=float(max_return * 100) * np.sum(np.abs(weights)),
         value=(float(min_return * 100), float(max_return * 100)),
         step=0.1,
@@ -1932,6 +2063,7 @@ def backtesting_page():
         "Return to Optimization", key="ef_return_optimization_top"
     )
     nav_efficient_frontier = st.button("Efficient Frontier", key="bs_ef_top")
+    nav_currency = st.button("Currency weights", key="bs_currency_weights")
 
     if nav_return_quiz:
         st.session_state["current_page"] = "Quiz"
@@ -1962,6 +2094,12 @@ def backtesting_page():
         st.rerun()
     if nav_efficient_frontier:
         st.session_state["current_page"] = "Efficient Frontier"
+        st.session_state["frontier_returns"] = None
+        st.session_state["frontier_volatility"] = None
+        st.session_state["frontier_weights"] = None
+        st.rerun()
+    if nav_currency:
+        st.session_state["current_page"] = "Currency weight"
         st.session_state["frontier_returns"] = None
         st.session_state["frontier_volatility"] = None
         st.session_state["frontier_weights"] = None
@@ -1998,7 +2136,7 @@ def backtesting_page():
     st.header("Backtesting Parameters")
 
     # Window Size Input (in Months)
-    max_window_size = min(total_months, 120)  # Cap at 10 years or available data
+    max_window_size = min(total_months-1, 120)  # Cap at 10 years or available data
     default_window_size = min(
         48, max_window_size
     )  # Default to 4 years or max_window_size

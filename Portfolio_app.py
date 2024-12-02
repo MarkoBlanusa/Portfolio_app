@@ -277,7 +277,13 @@ assets = data.columns.tolist()
 
 
 def initialize_session_state():
-    pages = ["Introduction", "Quiz", "Data Visualization", "Optimization", "Efficient Frontier"]
+    pages = [
+        "Introduction",
+        "Quiz",
+        "Data Visualization",
+        "Optimization",
+        "Efficient Frontier",
+    ]
     if "current_page" not in st.session_state:
         st.session_state["current_page"] = "Introduction"
 
@@ -355,10 +361,12 @@ def introduction_page():
 
     # Title and Welcome Message
     st.title("📈 Advanced Portfolio Optimization Tool")
-    st.markdown("""
+    st.markdown(
+        """
     **Welcome to the Advanced Portfolio Optimization Tool!**  
     This application is designed to empower investors and financial enthusiasts with sophisticated tools to build, analyze, and optimize investment portfolios. Whether you're a seasoned investor or just starting out, our platform offers a comprehensive suite of features to enhance your investment strategy.
-    """)
+    """
+    )
 
     # Add an introductory image or graphic (optional)
     # Ensure you have an image named 'portfolio_intro.jpg' in the 'images' folder
@@ -373,7 +381,8 @@ def introduction_page():
 
     # Overview of Features
     st.header("🔍 Overview of Features")
-    st.markdown("""
+    st.markdown(
+        """
     Our application offers a range of features tailored to meet your portfolio management needs:
 
     - **🎯 Risk Aversion Approximation:** Determine your risk tolerance to align your investment strategy accordingly.
@@ -382,11 +391,13 @@ def introduction_page():
     - **🧠 Sentiment Data Integration:** Enhance decision-making by incorporating sentiment analysis into your portfolio construction.
     - **📈 Efficient Frontiers:** Visualize efficient frontiers to understand the risk-return trade-offs of different portfolio allocations.
     - **🔄 Backtesting:** Evaluate the performance of your strategies over historical data to ensure robustness.
-    """)
+    """
+    )
 
     # How to Use the Application
     st.header("🛠 How to Use This Application")
-    st.markdown("""
+    st.markdown(
+        """
     **Getting Started is Easy! Follow these steps:**
 
     1. **📂 Use our Dataset:** Begin by selecting from predefined datasets.
@@ -397,7 +408,8 @@ def introduction_page():
     6. **📈 Explore Efficient Frontiers:** Visualize efficient frontiers to comprehend the risk-return dynamics.
     7. **🔄 Backtest Strategies:** Test your portfolio performance against historical data to validate your strategy.
     8. **📥 Download Results:** Export your optimized portfolio and performance metrics for further analysis.
-    """)
+    """
+    )
 
     st.markdown("  ")  # Horizontal line separator
 
@@ -419,7 +431,8 @@ def introduction_page():
 
     # About Section
     st.header("👥 About This Application")
-    st.markdown("""
+    st.markdown(
+        """
     **Developed by:**  
     The Portfolio Optimization team (Group 1). Our mission is to provide advanced yet user-friendly tools that facilitate informed investment decisions.
 
@@ -431,38 +444,43 @@ def introduction_page():
     - Simplify the portfolio construction process.
     - Enhance investment strategies with sentiment analysis.
     - Provide reliable performance evaluations through backtesting.
-    """)
+    """
+    )
 
     # References and Learning Resources
     st.header("📚 References and Learning Resources")
-    st.markdown("""
+    st.markdown(
+        """
     Expand your knowledge with the following resources:
 
     - [Modern Portfolio Theory](https://en.wikipedia.org/wiki/Modern_portfolio_theory)
     - [Black-Litterman Model](https://www.investopedia.com/terms/b/blacklitterman-model.asp)
     - [Sentiment Analysis in Finance](https://www.investopedia.com/articles/investing/082614/sentiment-analysis-how-it-helps-investors.asp)
     - [PyPortfolioOpt Documentation](https://pyportfolioopt.readthedocs.io/en/latest/)
-    """)
+    """
+    )
 
     # Disclaimer
-    st.markdown("""
+    st.markdown(
+        """
     ---
     **Disclaimer:**  
     This application is intended for informational and educational purposes only. It does not constitute financial advice. Users should consult with a financial professional before making investment decisions.
-    """)
+    """
+    )
 
     # Footer (optional)
-    st.markdown("""
+    st.markdown(
+        """
     ---
     &copy; 2024 Group 1 of Master in Finance. All rights reserved.
-    """)
+    """
+    )
 
     if st.button("Go to risk averion quiz"):
         # Navigate to Data Visualization page
         st.session_state["current_page"] = "Quiz"
         st.rerun()
-
-
 
 
 # -------------------------------
@@ -1832,7 +1850,6 @@ def efficient_frontier_page():
         st.session_state["frontier_weights"] = None
         st.rerun()
 
-
     # Check if optimization has been run
     if not st.session_state.get("optimization_run", False):
         st.warning("Please run the optimization first.")
@@ -2136,7 +2153,7 @@ def backtesting_page():
     st.header("Backtesting Parameters")
 
     # Window Size Input (in Months)
-    max_window_size = min(total_months-1, 120)  # Cap at 10 years or available data
+    max_window_size = min(total_months - 1, 120)  # Cap at 10 years or available data
     default_window_size = min(
         48, max_window_size
     )  # Default to 4 years or max_window_size
@@ -4036,7 +4053,6 @@ def black_litterman_mu(
     full_assets,
     full_mean_returns,
     full_cov_matrix_adjusted,
-    cov_matrix_adjusted,
     assets,
     constraints,
 ):
@@ -4321,7 +4337,7 @@ def run_optimization(selected_objective, constraints):
         cov_matrix_adjusted, index=cov_matrix.index, columns=cov_matrix.columns
     )
 
-    full_cov_matrix_adjusted = risk_models.CovarianceShrinkage(full_data).ledoit_wolf()
+    full_cov_matrix_adjusted = risk_models.CovarianceShrinkage(full_data, frequency=12).ledoit_wolf()
     full_cov_matrix_adjusted = adjust_covariance_matrix(full_cov_matrix_adjusted.values)
     full_cov_matrix_adjusted = pd.DataFrame(
         full_cov_matrix_adjusted,
@@ -4337,7 +4353,6 @@ def run_optimization(selected_objective, constraints):
             full_assets,
             full_mean_returns,
             full_cov_matrix_adjusted,
-            cov_matrix_adjusted,
             assets,
             constraints,
         )
@@ -4359,8 +4374,6 @@ def run_optimization(selected_objective, constraints):
             constraints["long_only"],
             constraints["min_weight_value"],
             constraints["max_weight_value"],
-            # constraints["min_trade_value"],
-            # constraints["max_trade_value"],
             constraints["leverage_limit"],
             constraints["leverage_limit_value"],
             constraints["leverage_limit_constraint_type"],
@@ -4470,7 +4483,7 @@ def run_optimization(selected_objective, constraints):
 def cov_matrix_adjusted(data, cov_matrix):
     if len(data) / len(cov_matrix) < 2:
 
-        cov_matrix = risk_models.CovarianceShrinkage(data).ledoit_wolf()
+        cov_matrix = risk_models.CovarianceShrinkage(data, frequency=12).ledoit_wolf()
 
         st.info("Covariance matrix shrinked using Ledoit_Wolf. ")
 
@@ -4543,15 +4556,12 @@ def run_backtest(
     returns = data_to_use.pct_change().dropna()
     mean_returns = returns.mean()
 
-    cov_matrix = returns.cov()
-
-    num_assets = len(mean_returns)
     assets = mean_returns.index.tolist()
 
     # List of all assets in the full dataset
     full_assets = full_data.columns.tolist()
 
-    full_cov_matrix_adjusted = risk_models.CovarianceShrinkage(full_data).ledoit_wolf()
+    full_cov_matrix_adjusted = risk_models.CovarianceShrinkage(full_data, frequency=12).ledoit_wolf()
     full_cov_matrix_adjusted = adjust_covariance_matrix(full_cov_matrix_adjusted.values)
     full_cov_matrix_adjusted = pd.DataFrame(
         full_cov_matrix_adjusted,
@@ -4573,20 +4583,16 @@ def run_backtest(
     last_optimization_date = None
     next_rebal_date = None
 
-    # Determine available years based on date filtering
-    available_years = data_to_use.index.year.unique().tolist()
-
-    cov_matrix = cov_matrix_adjusted(data_to_use, cov_matrix)
-
     for current_date in stqdm(dates, desc="Backtesting..."):
 
         # Step 1: Calculate portfolio return using current weights
         if weights is not None:
             portfolio_return = np.dot(weights, returns.loc[current_date])
 
-            # Calculate transaction costs based on the change in weights
-            transaction_cost = np.sum(np.abs(weights - weights_previous)) * fees
-            portfolio_return -= transaction_cost
+            if include_transaction_fees and weights_previous is not None:
+                # Calculate transaction costs based on the change in weights
+                transaction_cost = np.sum(np.abs(weights - weights_previous)) * fees
+                portfolio_return -= transaction_cost
 
             # Update portfolio value
             portfolio_value *= 1 + portfolio_return
@@ -4605,10 +4611,25 @@ def run_backtest(
             window_end = current_date - relativedelta(
                 days=1
             )  # Up to the previous month
-
+            
             # Get the windowed returns
+            window_returns = returns.loc[window_start:window_end]
+
+            raw_cov_matrix = window_returns.cov()
+            if len(window_returns) / len(raw_cov_matrix) < 2:
+
+                shrinked_cov_matrix = risk_models.CovarianceShrinkage(window_returns, returns_data=True, frequency=12).ledoit_wolf()
+
+                # Adjust covariance matrix
+                cov_matrix_adjusted = adjust_covariance_matrix(shrinked_cov_matrix.values)
+                cov_matrix_adjusted = pd.DataFrame(
+                    cov_matrix_adjusted, index=shrinked_cov_matrix.index, columns=shrinked_cov_matrix.columns
+                )
+            else:
+                cov_matrix_adjusted = raw_cov_matrix
+
+            
             if not use_sentiment:
-                window_returns = returns.loc[window_start:window_end]
                 mean_returns = window_returns.mean()
             else:
                 mu_bar = black_litterman_mu(
@@ -4617,19 +4638,18 @@ def run_backtest(
                     full_assets,
                     full_mean_returns,
                     full_cov_matrix_adjusted,
-                    cov_matrix,
                     assets,
                     constraints,
                 )
                 mean_returns = mu_bar
 
             # Perform Optimization
-            if not mean_returns.empty and not cov_matrix.empty:
+            if not mean_returns.empty and not cov_matrix_adjusted.empty:
 
                 if selected_objective == "Maximum Sharpe Ratio Portfolio":
                     result = optimize_sharpe_portfolio(
                         mean_returns,
-                        cov_matrix,
+                        cov_matrix_adjusted,
                         constraints["long_only"],
                         constraints["min_weight_value"],
                         constraints["max_weight_value"],
@@ -4649,7 +4669,7 @@ def run_backtest(
                 elif selected_objective == "Minimum Global Variance Portfolio":
                     result = optimize_min_variance_portfolio(
                         mean_returns,
-                        cov_matrix,
+                        cov_matrix_adjusted,
                         constraints["long_only"],
                         constraints["min_weight_value"],
                         constraints["max_weight_value"],
@@ -4665,7 +4685,7 @@ def run_backtest(
                 elif selected_objective == "Maximum Diversification Portfolio":
                     result = optimize_max_diversification_portfolio(
                         mean_returns,
-                        cov_matrix,
+                        cov_matrix_adjusted,
                         constraints["long_only"],
                         constraints["min_weight_value"],
                         constraints["max_weight_value"],
@@ -4681,7 +4701,7 @@ def run_backtest(
                 ):
                     result = optimize_erc_portfolio(
                         mean_returns,
-                        cov_matrix,
+                        cov_matrix_adjusted,
                         constraints["long_only"],
                         constraints["min_weight_value"],
                         constraints["max_weight_value"],
@@ -4695,7 +4715,7 @@ def run_backtest(
                 elif selected_objective == "Inverse Volatility Portfolio":
                     result = optimize_inverse_volatility_portfolio(
                         mean_returns,
-                        cov_matrix,
+                        cov_matrix_adjusted,
                         constraints["min_weight_value"],
                         constraints["max_weight_value"],
                         constraints["leverage_limit"],
@@ -4726,17 +4746,12 @@ def run_backtest(
 
                     # Store previous weights for transaction cost calculation
                     weights_previous = (
-                        weights.copy() if weights is not None else new_weights.copy()
+                        weights.copy() if weights is not None else None
                     )
 
                     # Normalize weights according to constraints
                     # (Assuming constraints are already enforced in optimization functions)
                     weights = new_weights.values
-                else:
-                    st.warning(
-                        f"Optimization failed on {current_date}. Maintaining previous weights."
-                    )
-                    # Optionally, keep previous weights or implement a fallback strategy
 
                 last_optimization_date = current_date
                 next_rebal_date = current_date + relativedelta(months=rebal_freq_months)
@@ -4766,6 +4781,14 @@ def run_backtest(
                     if net_exposure_type == "Equality constraint":
                         # Scale weights to exactly match the net exposure value
                         new_weights = new_weights / new_weights.sum() * net_exposure_val
+
+                        # Store previous weights for transaction cost calculation
+                        weights_previous = (
+                            weights.copy() if weights is not None else None
+                        )
+
+                        weights = new_weights.values
+
                     elif net_exposure_type == "Inequality constraint":
                         # Ensure net exposure does not exceed the specified maximum
                         current_net_exposure = new_weights.sum()
@@ -4773,6 +4796,14 @@ def run_backtest(
                             new_weights = (
                                 new_weights / current_net_exposure * net_exposure_val
                             )
+
+                            # Store previous weights for transaction cost calculation
+                            weights_previous = (
+                                weights.copy() if weights is not None else None
+                            )
+
+                            weights = new_weights.values
+
                         # Else, keep as is
                     else:
                         st.error(
@@ -4796,6 +4827,13 @@ def run_backtest(
                             new_weights = (
                                 new_weights / current_leverage * leverage_limit_value
                             )
+                            # Store previous weights for transaction cost calculation
+                            weights_previous = (
+                                weights.copy() if weights is not None else None
+                            )
+
+                            weights = new_weights.values
+
                         else:
                             st.error(
                                 f"Current leverage is zero on {current_date}. Cannot scale weights."
@@ -4808,6 +4846,13 @@ def run_backtest(
                             new_weights = (
                                 new_weights / current_leverage * leverage_limit_value
                             )
+                            # Store previous weights for transaction cost calculation
+                            weights_previous = (
+                                weights.copy() if weights is not None else None
+                            )
+
+                            weights = new_weights.values
+
                         # Else, keep as is
                     else:
                         st.error(
@@ -4815,9 +4860,17 @@ def run_backtest(
                         )
                         return
                 else:
-                    if not constraints.get("net_exposure", False):
+                    if constraints.get("net_exposure", False) == False:
                         # If neither net exposure nor leverage constraints, normalize to sum to 1
                         new_weights /= new_weights.sum()
+
+                        # Store previous weights for transaction cost calculation
+                        weights_previous = (
+                            weights.copy() if weights is not None else None
+                        )
+
+                        weights = new_weights.values
+
 
     # Create a Series for cumulative returns
     portfolio_cum_returns = pd.Series(
@@ -4908,17 +4961,10 @@ def process_optimization_result(result, data, selected_objective):
     st.session_state["mean_returns"] = mean_returns
     st.session_state["cov_matrix"] = cov_matrix
 
-    # Determine if portfolio_return is net or gross
-    portfolio_return_net = False
-
     if result.get("max_sharpe_returns") is not None:
         portfolio_return = result["max_sharpe_returns"] * 12
-        portfolio_return_net = True  # Net of transaction costs
     elif mean_returns is not None:
         portfolio_return = np.sum(mean_returns * weights) * 12
-        portfolio_return_net = False  # Gross returns
-    else:
-        portfolio_return = None
 
     if result.get("max_sharpe_volatility") is not None:
         portfolio_volatility = result["max_sharpe_volatility"] * np.sqrt(12)
@@ -4930,32 +4976,24 @@ def process_optimization_result(result, data, selected_objective):
         portfolio_volatility = None
 
     # Compute the total transactions costs
-    if include_transaction_fees and not portfolio_return_net:
+    if include_transaction_fees:
         total_transaction_cost = np.sum(np.abs(weights)) * fees * 12
     else:
         total_transaction_cost = 0.0
 
-    # Adjust expected return by transaction costs
-    if portfolio_return_net:
-        net_expected_return = portfolio_return  # Already net of transaction costs
-        gross_portfolio_return = portfolio_return + total_transaction_cost
-    else:
-        net_expected_return = portfolio_return - total_transaction_cost
-        gross_portfolio_return = portfolio_return
+    net_expected_return = portfolio_return - total_transaction_cost
 
     st.session_state["optimized_returns"] = portfolio_return
     st.session_state["optimized_volatility"] = portfolio_volatility
 
     if portfolio_return is not None and portfolio_volatility is not None:
         if include_risk_free_asset:
-            sharpe_ratio = (
-                gross_portfolio_return - risk_free_rate
-            ) / portfolio_volatility
+            sharpe_ratio = (portfolio_return - risk_free_rate) / portfolio_volatility
             net_sharpe_ratio = (
                 net_expected_return - risk_free_rate
             ) / portfolio_volatility
         else:
-            sharpe_ratio = gross_portfolio_return / portfolio_volatility
+            sharpe_ratio = portfolio_return / portfolio_volatility
             net_sharpe_ratio = net_expected_return / portfolio_volatility
 
         st.subheader(f"Portfolio Performance ({selected_objective}):")
@@ -4965,7 +5003,7 @@ def process_optimization_result(result, data, selected_objective):
 
         if include_transaction_fees:
             st.write(
-                f"Total Annualized Transaction Costs: {(np.sum(np.abs(weights)) * fees * 12):.2%}"
+                f"Annualized Transaction Costs: {(np.sum(np.abs(weights)) * fees * 12):.2%} (assuming monthly rebalancing from cash)"
             )
             st.write(f"Net Expected Portfolio Return: {net_expected_return:.2%}")
             st.write(f"Net Sharpe Ratio: {net_sharpe_ratio:.2f}")

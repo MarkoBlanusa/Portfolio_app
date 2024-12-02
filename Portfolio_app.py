@@ -448,19 +448,6 @@ def introduction_page():
     """
     )
 
-    # References and Learning Resources
-    st.header("📚 References and Learning Resources")
-    st.markdown(
-        """
-    Expand your knowledge with the following resources:
-
-    - [Modern Portfolio Theory](https://en.wikipedia.org/wiki/Modern_portfolio_theory)
-    - [Black-Litterman Model](https://www.investopedia.com/terms/b/blacklitterman-model.asp)
-    - [Sentiment Analysis in Finance](https://www.investopedia.com/articles/investing/082614/sentiment-analysis-how-it-helps-investors.asp)
-    - [PyPortfolioOpt Documentation](https://pyportfolioopt.readthedocs.io/en/latest/)
-    """
-    )
-
     # Disclaimer
     st.markdown(
         """
@@ -2392,7 +2379,7 @@ def backtesting_page():
         ax.set_title("Distribution of Returns - Value-Weighted Portfolio")
         st.pyplot(fig)
         plt.close()
-        
+
         # Display Performance Metrics
         st.subheader("Performance Metrics")
 
@@ -2639,7 +2626,7 @@ def display_constraints():
     selected_objective = st.session_state["selected_objective"]
 
     # Constraints
-    st.header("Constraints Selection")
+    st.header("Parameters Selection")
     long_only = st.checkbox("Long only", key="long_only")
     use_sentiment = st.checkbox("Sentiment data", key="use_sentiment")
     date_range_filter = st.checkbox("Date Range Filter", key="date_range_filter")
@@ -3940,7 +3927,7 @@ def optimize_erc_portfolio(
                 "fun": lambda x: 1 - np.sum(x),
             }
         )
-
+    
     if long_only:
         bounds = tuple((max(min_weight, 0.0), max_weight) for _ in range(num_assets))
     else:

@@ -2196,7 +2196,14 @@ def backtesting_page():
     if st.button("Run Backtesting"):
         with st.spinner("Running backtest..."):
             # Perform Backtesting
-            portfolio_cum_returns, metrics = run_backtest(
+            (
+                portfolio_cum_returns,
+                ew_portfolio_cum_returns,
+                vw_portfolio_cum_returns,
+                metrics_main,
+                metrics_ew,
+                metrics_vw,
+            ) = run_backtest(
                 selected_objective,
                 constraints,
                 window_size_months,
@@ -2207,7 +2214,11 @@ def backtesting_page():
 
             # Store results in session state
             st.session_state["portfolio_cum_returns"] = portfolio_cum_returns
-            st.session_state["backtest_metrics"] = metrics
+            st.session_state["ew_portfolio_cum_returns"] = ew_portfolio_cum_returns
+            st.session_state["vw_portfolio_cum_returns"] = vw_portfolio_cum_returns
+            st.session_state["backtest_metrics"] = metrics_main
+            st.session_state["ew_backtest_metrics"] = metrics_ew
+            st.session_state["vw_backtest_metrics"] = metrics_vw
 
     # Display Backtesting Results
     if st.session_state.get("portfolio_cum_returns", None) is not None:
@@ -2215,41 +2226,75 @@ def backtesting_page():
 
         # Plot Cumulative Returns
         st.subheader("Cumulative Returns")
+
+        # Check if benchmark portfolios exist
+        ew_portfolio_cum_returns = st.session_state.get("ew_portfolio_cum_returns", None)
+        vw_portfolio_cum_returns = st.session_state.get("vw_portfolio_cum_returns", None)
+
         fig, ax = plt.subplots(figsize=(10, 6))
-        ax.plot(st.session_state["portfolio_cum_returns"], label="Portfolio")
+        ax.plot(
+            st.session_state["portfolio_cum_returns"],
+            label="Optimized Portfolio",
+            color="blue",
+        )
+
+        if ew_portfolio_cum_returns is not None:
+            ax.plot(
+                ew_portfolio_cum_returns,
+                label="Equally Weighted Portfolio",
+                color="green",
+            )
+
+        if vw_portfolio_cum_returns is not None:
+            ax.plot(
+                vw_portfolio_cum_returns,
+                label="Value-Weighted Portfolio",
+                color="red",
+            )
+
         ax.set_xlabel("Date")
-        ax.set_ylabel("Cumulative Returns")
+        ax.set_ylabel("Portfolio Value")
         ax.set_title("Cumulative Returns Over Time")
         ax.legend()
         st.pyplot(fig)
         plt.close()
 
-        # Display Descriptive Statistics
+        # Display Performance Metrics
         st.subheader("Performance Metrics")
-        metrics = st.session_state["backtest_metrics"]
-        metrics_df = pd.DataFrame.from_dict(metrics, orient="index", columns=["Value"])
+
+        # Prepare metrics data
+        metrics_main = st.session_state.get("backtest_metrics", {})
+        metrics_ew = st.session_state.get("ew_backtest_metrics", {})
+        metrics_vw = st.session_state.get("vw_backtest_metrics", {})
+
+        # Create DataFrame for metrics
+        metrics_df = pd.DataFrame({
+            "Metric": metrics_main.keys(),
+            "Optimized Portfolio": metrics_main.values(),
+            "Equally Weighted Portfolio": metrics_ew.values() if metrics_ew else [np.nan]*len(metrics_main),
+            "Value-Weighted Portfolio": metrics_vw.values() if metrics_vw else [np.nan]*len(metrics_main),
+        })
         st.table(metrics_df)
 
         # Optionally, allow downloading the backtest results
         if st.button("Download Backtest Results"):
-            portfolio_cum_returns = st.session_state["portfolio_cum_returns"]
-            metrics = st.session_state["backtest_metrics"]
-
             # Prepare DataFrame for download
-            cum_returns_df = portfolio_cum_returns.reset_index()
-            cum_returns_df.columns = ["Date", "Cumulative Returns"]
-            metrics_df = pd.DataFrame.from_dict(
-                metrics, orient="index", columns=["Value"]
-            )
-            metrics_df = metrics_df.reset_index().rename(columns={"index": "Metric"})
+            cum_returns_df = pd.DataFrame({
+                "Date": st.session_state["portfolio_cum_returns"].index,
+                "Optimized Portfolio": st.session_state["portfolio_cum_returns"].values,
+                "Equally Weighted Portfolio": st.session_state["ew_portfolio_cum_returns"].values,
+                "Value-Weighted Portfolio": st.session_state["vw_portfolio_cum_returns"].values,
+            })
+            metrics_df_download = metrics_df.copy()
 
-            # Create CSVs
+            # Convert DataFrames to CSV
             cum_returns_csv = cum_returns_df.to_csv(index=False)
-            metrics_csv = metrics_df.to_csv(index=False)
+            metrics_csv = metrics_df_download.to_csv(index=False)
 
-            # Combine both CSVs into a single file (optional)
+            # Combine CSVs with a separator
             combined_csv = cum_returns_csv + "\n" + metrics_csv
 
+            # Provide download button
             st.download_button(
                 label="Download Backtest Results as CSV",
                 data=combined_csv,
@@ -4332,7 +4377,7 @@ def run_optimization(selected_objective, constraints):
     full_assets = full_data.columns.tolist()
 
     # Adjust covariance matrix
-    cov_matrix_adjusted = adjust_covariance_matrix(cov_matrix.values)
+    cov_matrix_adjusted = cov_matrix_transformed(data_to_use, cov_matrix)
     cov_matrix_adjusted = pd.DataFrame(
         cov_matrix_adjusted, index=cov_matrix.index, columns=cov_matrix.columns
     )
@@ -4480,17 +4525,17 @@ def run_optimization(selected_objective, constraints):
     # st.session_state["frontier_weights"] = result.get("frontier_weights")
 
 
-def cov_matrix_adjusted(data, cov_matrix):
+def cov_matrix_transformed(data, cov_matrix):
     if len(data) / len(cov_matrix) < 2:
 
-        cov_matrix = risk_models.CovarianceShrinkage(data, frequency=12).ledoit_wolf()
+        shrinked_cov_matrix = risk_models.CovarianceShrinkage(data, frequency=12).ledoit_wolf()
 
         st.info("Covariance matrix shrinked using Ledoit_Wolf. ")
 
     # Adjust covariance matrix
-    cov_matrix_adjusted = adjust_covariance_matrix(cov_matrix.values)
+    cov_matrix_adjusted = adjust_covariance_matrix(shrinked_cov_matrix.values)
     cov_matrix_adjusted = pd.DataFrame(
-        cov_matrix_adjusted, index=cov_matrix.index, columns=cov_matrix.columns
+        cov_matrix_adjusted, index=shrinked_cov_matrix.index, columns=shrinked_cov_matrix.columns
     )
 
     return cov_matrix_adjusted
@@ -4557,6 +4602,7 @@ def run_backtest(
     mean_returns = returns.mean()
 
     assets = mean_returns.index.tolist()
+    num_assets = len(assets)
 
     # List of all assets in the full dataset
     full_assets = full_data.columns.tolist()
@@ -4570,13 +4616,26 @@ def run_backtest(
     )
 
     # Initialize variables
-    start_date = returns.index.min() + relativedelta(months=window_size_months)
-    dates = returns.index[returns.index >= start_date]
+    backtest_start_date = returns.index.min() + relativedelta(months=window_size_months)
+    dates = returns.index[returns.index >= backtest_start_date]
 
     # Initialize portfolio value
     portfolio_value = initial_value
     portfolio_values = []
     portfolio_returns = []
+
+    # Initialize benchmark portfolios
+    ew_portfolio_value = initial_value
+    ew_portfolio_values = []
+    ew_portfolio_returns = []
+    ew_weights = None
+    ew_weights_previous = None
+
+    vw_portfolio_value = initial_value
+    vw_portfolio_values = []
+    vw_portfolio_returns = []
+    vw_weights = None
+    vw_weights_previous = None
 
     # Initialize weights
     weights = None
@@ -4598,10 +4657,32 @@ def run_backtest(
             portfolio_value *= 1 + portfolio_return
             portfolio_returns.append(portfolio_return)
             portfolio_values.append(portfolio_value)
-        # else:
-        #     # No investment yet
-        #     portfolio_returns.append(0.0)
-        #     portfolio_values.append(portfolio_value)
+
+        # Calculate equally weighted portfolio return
+        if ew_weights is not None:
+            ew_portfolio_return = np.dot(ew_weights, returns.loc[current_date])
+            
+            if include_transaction_fees and ew_weights_previous is not None:
+                # Calculate transaction costs based on the change in weights
+                ew_transaction_cost = np.sum(np.abs(ew_weights - ew_weights_previous)) * fees
+                ew_portfolio_return -= ew_transaction_cost
+
+            ew_portfolio_value *= (1 + ew_portfolio_return)
+            ew_portfolio_returns.append(ew_portfolio_return)
+            ew_portfolio_values.append(ew_portfolio_value)
+
+        # Calculate value-weighted portfolio return
+        if vw_weights is not None:
+            vw_portfolio_return = np.dot(vw_weights, returns.loc[current_date])
+
+            if include_transaction_fees and vw_weights_previous is not None:
+                # Calculate transaction costs based on the change in weights
+                vw_transaction_cost = np.sum(np.abs(vw_weights - vw_weights_previous)) * fees
+                vw_portfolio_return -= vw_transaction_cost
+
+            vw_portfolio_value *= (1 + vw_portfolio_return)
+            vw_portfolio_returns.append(vw_portfolio_return)
+            vw_portfolio_values.append(vw_portfolio_value)
 
         # Step 2: Decide whether to rebalance or proportionally adjust weights for the next period
         if (last_optimization_date is None) or (current_date >= next_rebal_date):
@@ -4755,6 +4836,7 @@ def run_backtest(
 
                 last_optimization_date = current_date
                 next_rebal_date = current_date + relativedelta(months=rebal_freq_months)
+
             else:
                 st.warning(f"Insufficient data for optimization on {current_date}.")
                 # Optionally, skip rebalancing
@@ -4871,56 +4953,266 @@ def run_backtest(
 
                         weights = new_weights.values
 
+        # Always update benchmark portfolios
+
+        # Equally Weighted Portfolio
+        ew_weights_previous = ew_weights.copy() if ew_weights is not None else None
+        ew_weights = np.array([1.0 / num_assets] * num_assets)
+
+        # Value-Weighted Portfolio
+        # Get market caps at current_date
+        if current_date in market_caps_to_use.index:
+            vw_market_caps = market_caps_to_use.loc[current_date, assets]
+        else:
+            # Find the previous available market caps date
+            vw_market_caps = market_caps_to_use.loc[:current_date, assets].iloc[-1] if not market_caps_to_use.loc[:current_date, assets].empty else None
+
+        if vw_market_caps is not None:
+            vw_weights_previous = vw_weights.copy() if vw_weights is not None else None
+            vw_weights = vw_market_caps / vw_market_caps.sum()
+            vw_weights = vw_weights.values  # Ensure it's a numpy array
+
+        # # Compute the weights of the benchmarks
+        # # Proportional rebalance based on performance
+        # if ew_weights is not None and vw_weights is not None:
+        #     # Calculate asset returns for the current month
+        #     current_returns = returns.loc[current_date]
+        #     # Update weights proportionally based on returns
+        #     ew_new_weights = ew_weights * (1 + current_returns)
+        #     vw_new_weights = vw_weights * (1 + current_returns)
+            
+        #     if constraints.get("net_exposure", False):
+        #         net_exposure_val = constraints.get("net_exposure_value", 1.0)
+        #         net_exposure_type = constraints.get(
+        #             "net_exposure_constraint_type", "Equality constraint"
+        #         )
+
+        #         if net_exposure_type == "Equality constraint":
+        #             # Scale weights to exactly match the net exposure value
+        #             ew_new_weights = ew_new_weights / ew_new_weights.sum() * net_exposure_val
+
+        #             # Store previous weights for transaction cost calculation
+        #             ew_weights_previous = (
+        #                 ew_weights.copy() if ew_weights is not None else None
+        #             )
+
+        #             ew_weights = ew_new_weights.values
+
+        #             # Scale weights to exactly match the net exposure value
+        #             vw_new_weights = vw_new_weights / vw_new_weights.sum() * net_exposure_val
+
+        #             # Store previous weights for transaction cost calculation
+        #             vw_weights_previous = (
+        #                 vw_weights.copy() if vw_weights is not None else None
+        #             )
+
+        #             vw_weights = vw_new_weights.values
+
+        #         elif net_exposure_type == "Inequality constraint":
+        #             # Ensure net exposure does not exceed the specified maximum
+        #             current_net_exposure = new_weights.sum()
+        #             if current_net_exposure > net_exposure_val:
+        #                 ew_new_weights = (
+        #                     ew_new_weights / current_net_exposure * net_exposure_val
+        #                 )
+
+        #                 # Store previous weights for transaction cost calculation
+        #                 ew_weights_previous = (
+        #                     ew_weights.copy() if ew_weights is not None else None
+        #                 )
+
+        #                 ew_weights = ew_new_weights.values
+
+        #                 vw_new_weights = (
+        #                     vw_new_weights / current_net_exposure * net_exposure_val
+        #                 )
+
+        #                 # Store previous weights for transaction cost calculation
+        #                 vw_weights_previous = (
+        #                     vw_weights.copy() if vw_weights is not None else None
+        #                 )
+
+        #                 vw_weights = vw_new_weights.values
+
+        #             # Else, keep as is
+        #         else:
+        #             st.error(
+        #                 f"Unknown net exposure constraint type: {net_exposure_type}"
+        #             )
+        #             return
+
+        #         # Normalize weights to sum to 1 (or to the net exposure value if constraints are applied)
+        #     if constraints.get("leverage_limit", False):
+        #         leverage_limit_value = constraints.get("leverage_limit_value", 1.0)
+        #         leverage_limit_constraint_type = constraints.get(
+        #             "leverage_limit_constraint_type", "Equality constraint"
+        #         )
+
+        #         # Calculate current leverage as the sum of absolute weights
+        #         current_leverage = new_weights.abs().sum()
+
+        #         if leverage_limit_constraint_type == "Equality constraint":
+        #             # Scale weights to exactly match the leverage limit
+        #             if current_leverage != 0:
+        #                 ew_new_weights = (
+        #                     ew_new_weights / current_leverage * leverage_limit_value
+        #                 )
+        #                 # Store previous weights for transaction cost calculation
+        #                 ew_weights_previous = (
+        #                     ew_weights.copy() if ew_weights is not None else None
+        #                 )
+
+        #                 ew_weights = ew_new_weights.values
+
+        #                 vw_new_weights = (
+        #                     vw_new_weights / current_leverage * leverage_limit_value
+        #                 )
+        #                 # Store previous weights for transaction cost calculation
+        #                 vw_weights_previous = (
+        #                     vw_weights.copy() if vw_weights is not None else None
+        #                 )
+
+        #                 vw_weights = vw_new_weights.values
+
+        #             else:
+        #                 st.error(
+        #                     f"Current leverage is zero on {current_date}. Cannot scale weights."
+        #                 )
+        #                 return
+
+        #         elif leverage_limit_constraint_type == "Inequality constraint":
+        #             # Ensure leverage does not exceed the specified maximum
+        #             if current_leverage > leverage_limit_value:
+        #                 ew_new_weights = (
+        #                     ew_new_weights / current_leverage * leverage_limit_value
+        #                 )
+        #                 # Store previous weights for transaction cost calculation
+        #                 ew_weights_previous = (
+        #                     ew_weights.copy() if ew_weights is not None else None
+        #                 )
+
+        #                 ew_weights = ew_new_weights.values
+
+        #                 vw_new_weights = (
+        #                     vw_new_weights / current_leverage * leverage_limit_value
+        #                 )
+        #                 # Store previous weights for transaction cost calculation
+        #                 vw_ew_weights_previous = (
+        #                     vw_weights.copy() if vw_weights is not None else None
+        #                 )
+
+        #                 vw_weights = vw_new_weights.values
+
+        #             # Else, keep as is
+        #         else:
+        #             st.error(
+        #                 f"Unknown net exposure constraint type: {leverage_limit_constraint_type}"
+        #             )
+        #             return
+        #     else:
+        #         if constraints.get("net_exposure", False) == False:
+        #             # If neither net exposure nor leverage constraints, normalize to sum to 1
+        #             ew_new_weights /= ew_new_weights.sum()
+
+        #             # Store previous weights for transaction cost calculation
+        #             ew_weights_previous = (
+        #                 ew_weights.copy() if ew_weights is not None else None
+        #             )
+
+        #             ew_weights = ew_new_weights.values
+
+        #             # If neither net exposure nor leverage constraints, normalize to sum to 1
+        #             vw_new_weights /= vw_new_weights.sum()
+
+        #             # Store previous weights for transaction cost calculation
+        #             vw_weights_previous = (
+        #                 vw_weights.copy() if vw_weights is not None else None
+        #             )
+
+        #             vw_weights = vw_new_weights.values
 
     # Create a Series for cumulative returns
     portfolio_cum_returns = pd.Series(
         portfolio_values, index=dates[: len(portfolio_values)]
     )
 
-    # Calculate performance metrics
-    metrics = {}
-    cumulative_return = (portfolio_cum_returns.iloc[-1] / initial_value) - 1
-    metrics["Cumulative Return"] = cumulative_return
+    ew_portfolio_cum_returns = pd.Series(
+        ew_portfolio_values, index=dates[: len(ew_portfolio_values)]
+    )
 
-    # Annualized Return
-    num_years = (dates[-1] - dates[0]).days / 365.25
-    if num_years > 0:
-        metrics["Annualized Return"] = (
-            portfolio_cum_returns.iloc[-1] / initial_value
-        ) ** (1 / num_years) - 1
-    else:
-        metrics["Annualized Return"] = np.nan
+    vw_portfolio_cum_returns = pd.Series(
+        vw_portfolio_values, index=dates[: len(vw_portfolio_values)]
+    )
 
-    # Annualized Volatility
-    if portfolio_returns:
-        metrics["Annualized Volatility"] = np.std(portfolio_returns) * np.sqrt(12)
-    else:
-        metrics["Annualized Volatility"] = np.nan
+    # Define a function to compute metrics
+    def compute_metrics(portfolio_cum_returns, portfolio_returns, initial_value):
+        metrics = {}
+        if portfolio_cum_returns.empty:
+            metrics = {
+                "Cumulative Return": np.nan,
+                "Annualized Return": np.nan,
+                "Annualized Volatility": np.nan,
+                "Sharpe Ratio": np.nan,
+                "Sortino Ratio": np.nan,
+            }
+            return metrics
 
-    # Sharpe Ratio
-    if metrics["Annualized Volatility"] != 0 and not np.isnan(
-        metrics["Annualized Volatility"]
-    ):
-        metrics["Sharpe Ratio"] = (
-            metrics["Annualized Return"] - risk_free_rate
-        ) / metrics["Annualized Volatility"]
-    else:
-        metrics["Sharpe Ratio"] = np.nan
+        cumulative_return = (portfolio_cum_returns.iloc[-1] / initial_value) - 1
+        metrics["Cumulative Return"] = cumulative_return
 
-    # Sortino Ratio
-    if portfolio_returns:
-        downside_returns = [r for r in portfolio_returns if r < 0]
-        if downside_returns:
-            downside_std = np.std(downside_returns) * np.sqrt(12)
-            metrics["Sortino Ratio"] = (
+        # Annualized Return
+        num_years = (dates[-1] - dates[0]).days / 365.25
+        if num_years > 0:
+            metrics["Annualized Return"] = (
+                portfolio_cum_returns.iloc[-1] / initial_value
+            ) ** (1 / num_years) - 1
+        else:
+            metrics["Annualized Return"] = np.nan
+
+        # Annualized Volatility
+        if portfolio_returns:
+            metrics["Annualized Volatility"] = np.std(portfolio_returns) * np.sqrt(12)
+        else:
+            metrics["Annualized Volatility"] = np.nan
+
+        # Sharpe Ratio
+        if metrics["Annualized Volatility"] != 0 and not np.isnan(
+            metrics["Annualized Volatility"]
+        ):
+            metrics["Sharpe Ratio"] = (
                 metrics["Annualized Return"] - risk_free_rate
-            ) / downside_std
+            ) / metrics["Annualized Volatility"]
+        else:
+            metrics["Sharpe Ratio"] = np.nan
+
+        # Sortino Ratio
+        if portfolio_returns:
+            downside_returns = [r for r in portfolio_returns if r < 0]
+            if downside_returns:
+                downside_std = np.std(downside_returns) * np.sqrt(12)
+                metrics["Sortino Ratio"] = (
+                    metrics["Annualized Return"] - risk_free_rate
+                ) / downside_std
+            else:
+                metrics["Sortino Ratio"] = np.nan
         else:
             metrics["Sortino Ratio"] = np.nan
-    else:
-        metrics["Sortino Ratio"] = np.nan
 
-    return portfolio_cum_returns, metrics
+        return metrics
+
+    # Compute metrics
+    metrics_main = compute_metrics(portfolio_cum_returns, portfolio_returns, initial_value)
+    metrics_ew = compute_metrics(ew_portfolio_cum_returns, ew_portfolio_returns, initial_value)
+    metrics_vw = compute_metrics(vw_portfolio_cum_returns, vw_portfolio_returns, initial_value)
+
+    return (
+        portfolio_cum_returns,
+        ew_portfolio_cum_returns,
+        vw_portfolio_cum_returns,
+        metrics_main,
+        metrics_ew,
+        metrics_vw,
+    )
 
 
 # -------------------------------

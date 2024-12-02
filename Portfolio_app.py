@@ -3306,7 +3306,7 @@ def optimize_sharpe_portfolio(
 
             # Initialize Efficient Frontier
             ef = EfficientFrontier(
-                mean_returns, cov_matrix_adjusted, weight_bounds=weight_bounds
+                mean_returns, cov_matrix_adjusted, weight_bounds=weight_bounds, solver='SCS'
             )
 
             ef.add_constraint(lambda w: cp.sum(w) == 1)
@@ -3453,10 +3453,10 @@ def optimize_sharpe_portfolio(
                         f"Iteration: {iteration_counter['n_iter']}"
                     )
 
-                # Estimated time indicator
-                st.info(
-                    "Estimated time to complete optimization: depends on data and constraints."
-                )
+                # # Estimated time indicator
+                # st.info(
+                #     "Estimated time to complete optimization: depends on data and constraints."
+                # )
 
                 with st.spinner("Optimization in progress..."):
                     start_time = time.time()
@@ -3481,7 +3481,7 @@ def optimize_sharpe_portfolio(
                 result["cov_matrix"] = cov_matrix_adjusted
                 result["status"] = "success"
 
-                st.success(f"Optimization completed in {elapsed_time:.2f} seconds")
+                # st.success(f"Optimization completed in {elapsed_time:.2f} seconds")
 
             except Exception as e:
                 st.error(f"Optimization failed: {e}")
@@ -3820,10 +3820,10 @@ def optimize_max_diversification_portfolio(
             progress_bar.progress(min(progress, 1.0))
             iteration_container.text(f"Iteration: {iteration_counter['n_iter']}")
 
-        # Estimated time indicator
-        st.info(
-            "Estimated time to complete optimization: depends on data and constraints."
-        )
+        # # Estimated time indicator
+        # st.info(
+        #     "Estimated time to complete optimization: depends on data and constraints."
+        # )
 
         with st.spinner("Optimization in progress..."):
             start_time = time.time()
@@ -3850,7 +3850,7 @@ def optimize_max_diversification_portfolio(
             result["mean_returns"] = mean_returns
             result["cov_matrix"] = cov_matrix_adjusted
             result["status"] = "success"
-            st.success(f"Optimization completed in {elapsed_time:.2f} seconds")
+            # st.success(f"Optimization completed in {elapsed_time:.2f} seconds")
             # Compute the diversification ratio
             numerator = np.dot(weights, std_devs)
             denominator = np.sqrt(
@@ -3970,10 +3970,10 @@ def optimize_erc_portfolio(
             progress_bar.progress(min(progress, 1.0))
             iteration_container.text(f"Iteration: {iteration_counter['n_iter']}")
 
-        # Estimated time indicator
-        st.info(
-            "Estimated time to complete optimization: depends on data and constraints."
-        )
+        # # Estimated time indicator
+        # st.info(
+        #     "Estimated time to complete optimization: depends on data and constraints."
+        # )
 
         with st.spinner("Optimization in progress..."):
             start_time = time.time()
@@ -4000,7 +4000,7 @@ def optimize_erc_portfolio(
             result["mean_returns"] = mean_returns
             result["cov_matrix"] = cov_matrix_adjusted
             result["status"] = "success"
-            st.success(f"Optimization completed in {elapsed_time:.2f} seconds")
+            # st.success(f"Optimization completed in {elapsed_time:.2f} seconds")
 
     except Exception as e:
         st.error(f"Optimization failed: {e}")
@@ -4790,6 +4790,7 @@ def run_backtest(
             portfolio_values.append(portfolio_value)
             portfolio_dates.append(current_date)
 
+
         # Calculate equally weighted portfolio return
         if ew_weights is not None:
             ew_portfolio_return = np.dot(ew_weights, returns.loc[current_date])
@@ -4992,47 +4993,47 @@ def run_backtest(
                 # if new_weights.sum() == 0:
                 #     st.error(f"Sum of new weights is zero on {current_date}.")
                 #     return
-                # Normalize weights to sum to 1 (or to the net exposure value if constraints are applied)
+                # Apply Net Exposure Constraint
                 if constraints.get("net_exposure", False):
-                    net_exposure_val = constraints.get("net_exposure_value", 1.0)
-                    net_exposure_type = constraints.get(
-                        "net_exposure_constraint_type", "Equality constraint"
-                    )
+                    net_exposure_val = constraints.get("net_exposure_value", 0.0)
+                    net_exposure_type = constraints.get("net_exposure_constraint_type", "Equality constraint")
 
                     if net_exposure_type == "Equality constraint":
-                        # Scale weights to exactly match the net exposure value
-                        new_weights = new_weights / new_weights.sum() * net_exposure_val
+                        if new_weights.sum() == 0:
+                            if net_exposure_val == 0:
+                                # Weights already satisfy the constraint
+                                weights_previous = weights.copy()
+                                weights = new_weights.values
+                            else:
+                                st.error(f"Cannot adjust weights to meet net exposure {net_exposure_val} when current net exposure is zero on {current_date}.")
+                                return
+                        else:
+                            scaling_factor = net_exposure_val / new_weights.sum()
+                            new_weights = new_weights * scaling_factor
 
-                        # Store previous weights for transaction cost calculation
-                        weights_previous = (
-                            weights.copy() if weights is not None else None
-                        )
-
-                        weights = new_weights.values
-
-                    elif net_exposure_type == "Inequality constraint":
-                        # Ensure net exposure does not exceed the specified maximum
-                        current_net_exposure = new_weights.sum()
-                        if current_net_exposure > net_exposure_val:
-                            new_weights = (
-                                new_weights / current_net_exposure * net_exposure_val
-                            )
-
-                            # Store previous weights for transaction cost calculation
-                            weights_previous = (
-                                weights.copy() if weights is not None else None
-                            )
-
+                            weights_previous = weights.copy()
                             weights = new_weights.values
 
-                        # Else, keep as is
+                    elif net_exposure_type == "Inequality constraint":
+                        if new_weights.sum() > net_exposure_val:
+                            if new_weights.sum() == 0:
+                                st.error(f"Cannot adjust weights to meet net exposure <= {net_exposure_val} when current net exposure is zero on {current_date}.")
+                                return
+                            scaling_factor = net_exposure_val / new_weights.sum()
+                            new_weights = new_weights * scaling_factor
+
+                            weights_previous = weights.copy()
+                            weights = new_weights.values
+                        else:
+                            # Constraint is already satisfied
+                            weights_previous = weights.copy()
+                            weights = new_weights.values
                     else:
-                        st.error(
-                            f"Unknown net exposure constraint type: {net_exposure_type}"
-                        )
+                        st.error(f"Unknown net exposure constraint type: {net_exposure_type}")
                         return
 
-                    # Normalize weights to sum to 1 (or to the net exposure value if constraints are applied)
+
+                # Normalize weights to sum to 1 (or to the net exposure value if constraints are applied)
                 if constraints.get("leverage_limit", False):
                     leverage_limit_value = constraints.get("leverage_limit_value", 1.0)
                     leverage_limit_constraint_type = constraints.get(
@@ -5044,7 +5045,7 @@ def run_backtest(
 
                     if leverage_limit_constraint_type == "Equality constraint":
                         # Scale weights to exactly match the leverage limit
-                        if current_leverage != 0:
+                        if current_leverage != leverage_limit_value:
                             new_weights = (
                                 new_weights / current_leverage * leverage_limit_value
                             )
@@ -5082,14 +5083,13 @@ def run_backtest(
                         return
                 else:
                     if constraints.get("net_exposure", False) == False:
-                        # If neither net exposure nor leverage constraints, normalize to sum to 1
-                        new_weights /= new_weights.sum()
+                        # No net exposure constraint; normalize weights to sum to 1
+                        if new_weights.sum() == 0:
+                            st.error(f"Total weight is zero on {current_date}. Cannot normalize weights.")
+                            return
+                        new_weights = new_weights / new_weights.sum()
 
-                        # Store previous weights for transaction cost calculation
-                        weights_previous = (
-                            weights.copy() if weights is not None else None
-                        )
-
+                        weights_previous = weights.copy()
                         weights = new_weights.values
 
                 # Record weights and date

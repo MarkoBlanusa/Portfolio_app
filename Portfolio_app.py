@@ -1108,8 +1108,8 @@ def visualize_dataset(top_n_countries=15):
     # st.plotly_chart(fig_corr, use_container_width=True)
 
     # Create tabs for categorical distributions
-    tab1, tab2, tab3, tab4 = st.tabs(
-        ["By Region", "By Sector", "By Country", "Carbon Statistics"]
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(
+        ["By Region", "By Sector", "By Country", "Carbon Statistics", "Sentiment Data"]
     )
 
     with tab1:
@@ -1448,6 +1448,59 @@ def visualize_dataset(top_n_countries=15):
             showlegend=False,
         )
         st.plotly_chart(fig_top10_intensity, use_container_width=True)
+
+    with tab5:
+        st.subheader("Monthly Sentiment Data by Sectors")
+
+        # Ensure 'sentiment_data' is available
+        if 'sentiment_data' not in globals():
+            st.error("Sentiment data is not available.")
+            return
+
+        # Get the list of unique sectors from 'sentiment_data'
+        available_sectors = sentiment_data['Sector'].unique().tolist()
+
+        # Let the user select sectors to display
+        selected_sectors = st.multiselect(
+            "Select sectors to display",
+            options=available_sectors,
+            default=available_sectors  # By default, select all sectors
+        )
+
+        if not selected_sectors:
+            st.warning("Please select at least one sector.")
+        else:
+            # Filter 'sentiment_data' for the selected sectors
+            filtered_sentiment = sentiment_data[sentiment_data['Sector'].isin(selected_sectors)]
+
+            # Create a line chart showing 'Weighted_Average_Sentiment' over time for each sector
+            fig = px.line(
+                filtered_sentiment,
+                x='Date',
+                y='Weighted_Average_Sentiment',
+                color='Sector',
+                title='Monthly Weighted Average Sentiment by Sector',
+                labels={
+                    'Date': 'Date',
+                    'Weighted_Average_Sentiment': 'Weighted Average Sentiment'
+                }
+            )
+            st.plotly_chart(fig, use_container_width=True)
+
+            # Optionally, display the sentiment count as well
+            st.subheader("Sentiment Count by Sector Over Time")
+            fig2 = px.line(
+                filtered_sentiment,
+                x='Date',
+                y='Sentiment_Count',
+                color='Sector',
+                title='Monthly Sentiment Count by Sector',
+                labels={
+                    'Date': 'Date',
+                    'Sentiment_Count': 'Sentiment Count'
+                }
+            )
+            st.plotly_chart(fig2, use_container_width=True)
 
     # ---------------------------
     # Interactive Selection Steps

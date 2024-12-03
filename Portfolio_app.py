@@ -2018,7 +2018,7 @@ def efficient_frontier_page():
         st.header("Optimized Portfolio Statistics")
 
         # Pie Chart of Asset Weights
-        st.subheader("Asset Allocation - Pie Chart")
+        st.subheader("Asset Allocation - Bar Chart")
         plot_asset_allocation_bar_chart(
             st.session_state["weights"], mean_returns.index.tolist()
         )
@@ -2743,18 +2743,20 @@ def display_constraints():
             help="Select how many months of sentiment data to include, counting back from the latest available date.",
         )
 
-        # Option to set sentiment count threshold
-        st.markdown("**Set the minimum sentiment count for data inclusion:**")
-        sentiment_count_threshold = st.number_input(
-            label="Minimum Sentiment Count",
-            min_value=1,
-            value=100,
-            step=10,
-            help="Filter out sentiment data with a sentiment count below this threshold to improve robustness.",
+        # Let the user select a specific tau value
+        tau_value = st.slider(
+            label="Tau value",
+            min_value=0.002,
+            max_value=0.5,
+            value=0.05,
+            step=0.001,
+            help="Factor used to approximate the gamma matrix. "
         )
+
     else:
         sentiment_window = None
         sentiment_count_threshold = None
+        tau_value = 0.05
 
     if sectors_filter:
         sectors = static_data["GICSSectorName"].unique().tolist()
@@ -2922,7 +2924,7 @@ def display_constraints():
         "long_only": long_only,
         "use_sentiment": use_sentiment,
         "sentiment_window": sentiment_window,
-        "sentiment_count_threshold": sentiment_count_threshold,
+        "tau_value": tau_value,
         "date_range_filter": date_range_filter,
         "start_date": start_date,
         "end_date": end_date,
@@ -4226,7 +4228,7 @@ def black_litterman_mu(
     risk_free_rate = constraints.get("risk_free_rate", 0.0)
 
     sentiment_window = constraints.get("sentiment_window", 3)
-    sentiment_count_threshold = constraints.get("sentiment_count_threshold", 100)
+    tau_value = constraints.get("tau_value", 0.05)
 
     # Load the sentiment data (already processed)
     sentiment_data_to_use = sentiment_data.copy()
@@ -4255,7 +4257,7 @@ def black_litterman_mu(
         sentiment_data_filtered.pivot(
             index="Date", columns="Sector", values="Sentiment_Count"
         )
-        < sentiment_count_threshold
+        < 1
     )
 
     # Interpolate missing values to handle gaps
@@ -4264,11 +4266,11 @@ def black_litterman_mu(
     # Calculate the average sentiment per sector over the window
     sector_sentiment = sentiment_pivot.mean()
 
-    # # Optionally, apply EWMA for further smoothing
-    # sector_sentiment = sector_sentiment.ewm(span=sentiment_window, adjust=False).mean()
+    # Optionally, apply EWMA for further smoothing
+    sector_sentiment = sector_sentiment.ewm(span=sentiment_window, adjust=False).mean()
 
-    # # Convert sector_sentiment to a pandas Series
-    # sector_sentiment = pd.Series(sector_sentiment)
+    # Convert sector_sentiment to a pandas Series
+    sector_sentiment = pd.Series(sector_sentiment)
 
     # Correctly assign start_date and end_date without trailing commas
     start_date = constraints.get("start_date", None)
@@ -4410,12 +4412,12 @@ def black_litterman_mu(
     # st.dataframe(P)
 
     # Define tau (scaling factor)
-    tau = 0.05  # Adjust as necessary
+    tau = tau_value  # Adjust as necessary
 
     # Define omega (uncertainty matrix)
     omega = np.diag(np.diag(tau * P.dot(cov_matrix_adjusted).dot(P.T)))
-    # Regularize omega to prevent singular matrix error
-    omega += np.eye(omega.shape[0]) * 1e-6
+    # # Regularize omega to prevent singular matrix error
+    # omega += np.eye(omega.shape[0]) * 1e-6
 
     # Compute the posterior expected returns
     bl = BlackLittermanModel(cov_matrix_adjusted, pi=pi, P=P, Q=Q, omega=omega, tau=tau)
@@ -4426,7 +4428,7 @@ def black_litterman_mu(
     # st.dataframe(bl_returns)
 
     # Save the expected returns and covariance matrix in session state
-    st.session_state["mean_returns"] = bl_returns
+    st.session_state["mu_bar"] = bl_returns
     st.session_state["cov_matrix"] = cov_matrix_adjusted
 
     return bl_returns
@@ -4522,7 +4524,8 @@ def run_optimization(selected_objective, constraints):
             assets,
             constraints,
         )
-        st.session_state["mean_returns"] = mu_bar
+        st.session_state["mu_bar"] = mu_bar
+        st.session_state["mean_returns"] = mean_returns
         st.session_state["cov_matrix"] = cov_matrix_adjusted
 
     else:
@@ -4531,7 +4534,7 @@ def run_optimization(selected_objective, constraints):
         st.session_state["cov_matrix"] = cov_matrix_adjusted
 
     if selected_objective == "Maximum Sharpe Ratio Portfolio":
-        mean_returns = st.session_state["mean_returns"]
+        mean_returns = st.session_state["mean_returns"] if not use_sentiment else st.session_state["mu_bar"]
         cov_matrix = st.session_state["cov_matrix"]
 
         result = optimize_sharpe_portfolio(
@@ -4553,7 +4556,7 @@ def run_optimization(selected_objective, constraints):
             risk_aversion,
         )
     elif selected_objective == "Minimum Global Variance Portfolio":
-        mean_returns = st.session_state["mean_returns"]
+        mean_returns = st.session_state["mean_returns"] if not use_sentiment else st.session_state["mu_bar"]
         cov_matrix = st.session_state["cov_matrix"]
 
         result = optimize_min_variance_portfolio(
@@ -4572,7 +4575,7 @@ def run_optimization(selected_objective, constraints):
             constraints["fees"],
         )
     elif selected_objective == "Maximum Diversification Portfolio":
-        mean_returns = st.session_state["mean_returns"]
+        mean_returns = st.session_state["mean_returns"] if not use_sentiment else st.session_state["mu_bar"]
         cov_matrix = st.session_state["cov_matrix"]
         result = optimize_max_diversification_portfolio(
             mean_returns,
@@ -4588,7 +4591,7 @@ def run_optimization(selected_objective, constraints):
             constraints["net_exposure_constraint_type"],
         )
     elif selected_objective == "Equally Weighted Risk Contribution Portfolio":
-        mean_returns = st.session_state["mean_returns"]
+        mean_returns = st.session_state["mean_returns"] if not use_sentiment else st.session_state["mu_bar"]
         cov_matrix = st.session_state["cov_matrix"]
         result = optimize_erc_portfolio(
             mean_returns,
@@ -4604,7 +4607,7 @@ def run_optimization(selected_objective, constraints):
             constraints["net_exposure_constraint_type"],
         )
     elif selected_objective == "Inverse Volatility Portfolio":
-        mean_returns = st.session_state["mean_returns"]
+        mean_returns = st.session_state["mean_returns"] if not use_sentiment else st.session_state["mu_bar"]
         cov_matrix = st.session_state["cov_matrix"]
         result = optimize_inverse_volatility_portfolio(
             mean_returns,
@@ -4636,7 +4639,6 @@ def run_optimization(selected_objective, constraints):
     else:
         st.error("No weights found in the result.")
 
-    st.session_state["mean_returns"] = result["mean_returns"]
     st.session_state["cov_matrix"] = result["cov_matrix"]
     st.session_state["optimization_run"] = True
 
@@ -5245,21 +5247,27 @@ def run_backtest(
 
 
 def process_optimization_result(result, data, selected_objective):
-
     st.session_state["result"] = result
 
     if result is None or result["status"] != "success":
         st.error("Optimization failed.")
         return
-
-    # Retrieve risk aversion from session state
-    if "risk_aversion" in st.session_state:
-        risk_aversion = st.session_state["risk_aversion"]
+    
+    # Use filtered data if available
+    if "filtered_data" in st.session_state:
+        data_to_use = st.session_state["filtered_data"]
     else:
-        risk_aversion = 1  # Default value
+        data_to_use = data
 
-    # Depending on what is in the result dictionary, process accordingly
-    if result["weights"] is not None:
+    # Retrieve necessary variables from session state
+    risk_aversion = st.session_state.get("risk_aversion", 1)  # Default value is 1
+    include_transaction_fees = st.session_state.get("include_transaction_fees", False)
+    fees = st.session_state.get("fees", 0.0)
+    risk_free_rate = st.session_state.get("risk_free_rate", 0.0)
+    include_risk_free_asset = st.session_state.get("include_risk_free_asset", False)
+
+    # Retrieve the optimized weights
+    if result.get("weights") is not None:
         weights = result["weights"]
     elif result.get("max_sharpe_weights") is not None:
         weights = result["max_sharpe_weights"]
@@ -5267,33 +5275,27 @@ def process_optimization_result(result, data, selected_objective):
         st.error("No weights found in the result.")
         return
 
+    # Convert weights to a pandas Series
     weights = pd.Series(weights, index=data.columns)
     st.session_state["optimization_run"] = True
     st.session_state["weights"] = weights
 
-    # Mean returns and covariance matrix
-    mean_returns = result["mean_returns"]
+    # Retrieve mean returns and covariance matrix
+    mean_returns = st.session_state["mean_returns"]
     cov_matrix = result["cov_matrix"]
-    st.session_state["mean_returns"] = mean_returns
     st.session_state["cov_matrix"] = cov_matrix
 
-    if result.get("max_sharpe_returns") is not None:
-        portfolio_return = result["max_sharpe_returns"] * 12
-    elif mean_returns is not None:
-        portfolio_return = np.sum(mean_returns * weights) * 12
+    # Calculate portfolio return and volatility
+    portfolio_return = np.dot(weights, mean_returns) * 12  # Annualized return
+    portfolio_volatility = (
+        np.sqrt(np.dot(weights.T, np.dot(cov_matrix, weights))) * np.sqrt(12)
+    )  # Annualized volatility
 
-    if result.get("max_sharpe_volatility") is not None:
-        portfolio_volatility = result["max_sharpe_volatility"] * np.sqrt(12)
-    elif cov_matrix is not None:
-        portfolio_volatility = np.sqrt(
-            np.dot(weights.T, np.dot(cov_matrix, weights))
-        ) * np.sqrt(12)
-    else:
-        portfolio_volatility = None
-
-    # Compute the total transactions costs
+    # Compute transaction costs
+    include_transaction_fees = st.session_state.get("include_transaction_fees", False)
+    fees = st.session_state.get("fees", 0.0)
     if include_transaction_fees:
-        total_transaction_cost = np.sum(np.abs(weights)) * fees * 12
+        total_transaction_cost = np.sum(np.abs(weights)) * fees * 12  # Assuming monthly rebalancing from start
     else:
         total_transaction_cost = 0.0
 
@@ -5302,65 +5304,155 @@ def process_optimization_result(result, data, selected_objective):
     st.session_state["optimized_returns"] = portfolio_return
     st.session_state["optimized_volatility"] = portfolio_volatility
 
-    if portfolio_return is not None and portfolio_volatility is not None:
-        if include_risk_free_asset:
-            sharpe_ratio = (portfolio_return - risk_free_rate) / portfolio_volatility
-            net_sharpe_ratio = (
-                net_expected_return - risk_free_rate
-            ) / portfolio_volatility
-        else:
-            sharpe_ratio = portfolio_return / portfolio_volatility
-            net_sharpe_ratio = net_expected_return / portfolio_volatility
-
-        st.subheader(f"Portfolio Performance ({selected_objective}):")
-        st.write(f"Expected Annual Return: {portfolio_return:.2%}")
-        st.write(f"Annual Volatility: {portfolio_volatility:.2%}")
-        st.write(f"Sharpe Ratio: {sharpe_ratio:.2f}")
-
-        if include_transaction_fees:
-            st.write(
-                f"Annualized Transaction Costs: {(np.sum(np.abs(weights)) * fees * 12):.2%} (assuming monthly rebalancing from cash)"
-            )
-            st.write(f"Net Expected Portfolio Return: {net_expected_return:.2%}")
-            st.write(f"Net Sharpe Ratio: {net_sharpe_ratio:.2f}")
-
-        # Calculate allocation between risk-free asset and portfolio
-        if include_risk_free_asset:
-            # Calculate allocation between risk-free asset and portfolio
-            allocation_tangency = (net_expected_return - risk_free_rate) / (
-                risk_aversion * (portfolio_volatility**2)
-            )
-            allocation_tangency = min(max(allocation_tangency, 0), sum(abs(weights)))
-            allocation_risk_free = max(sum(abs(weights)) - allocation_tangency, 0)
-
-            st.write(f"Invest {allocation_tangency * 100:.2f}% in the portfolio.")
-            st.write(
-                f"Invest {allocation_risk_free * 100:.2f}% in the risk-free asset."
-            )
-
+    # Calculate Sharpe Ratio
+    risk_free_rate = st.session_state.get("risk_free_rate", 0.0)
+    include_risk_free_asset = st.session_state.get("include_risk_free_asset", False)
+    if include_risk_free_asset:
+        sharpe_ratio = (portfolio_return - risk_free_rate) / portfolio_volatility
+        net_sharpe_ratio = (net_expected_return - risk_free_rate) / portfolio_volatility
     else:
-        st.subheader(f"Portfolio Weights ({selected_objective}):")
+        sharpe_ratio = portfolio_return / portfolio_volatility
+        net_sharpe_ratio = net_expected_return / portfolio_volatility
+
+    # Display Portfolio Performance
+    st.subheader(f"Portfolio Performance ({selected_objective}):")
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Expected Annual Return", f"{portfolio_return:.2%}")
+    col2.metric("Annual Volatility", f"{portfolio_volatility:.2%}")
+    col3.metric("Sharpe Ratio", f"{sharpe_ratio:.2f}")
+
+    if include_transaction_fees:
         st.write(
-            "Cannot compute portfolio return and volatility without returns and covariance matrix."
+            f"Annualized Transaction Costs: {total_transaction_cost:.2%} (assuming monthly rebalancing from cash)"
         )
+        st.write(f"Net Expected Portfolio Return: {net_expected_return:.2%}")
+        st.write(f"Net Sharpe Ratio: {net_sharpe_ratio:.2f}")
 
-    # Show the allocation
-    allocation_df = pd.DataFrame({"ISIN": data.columns, "Weight": weights})
-    # Map ISIN to Company name
-    isin_to_company = dict(zip(static_data["ISIN"], static_data["Company"]))
-    allocation_df["Company"] = allocation_df["ISIN"].map(isin_to_company)
-    allocation_df = allocation_df[["Company", "Weight"]]
+    # Calculate allocation between risk-free asset and portfolio
+    if include_risk_free_asset:
+        allocation_tangency = (net_expected_return - risk_free_rate) / (
+            risk_aversion * (portfolio_volatility**2)
+        )
+        allocation_tangency = min(max(allocation_tangency, 0), 1)
+        allocation_risk_free = 1 - allocation_tangency
 
-    st.subheader("Portfolio Weights:")
-    st.write(allocation_df)
-    st.write(
-        f"Sum of the weights and costs: {np.sum(weights) + (np.sum(np.abs(weights)) * fees * 12)}"
+        st.write(f"Invest {allocation_tangency * 100:.2f}% in the portfolio.")
+        st.write(f"Invest {allocation_risk_free * 100:.2f}% in the risk-free asset.")
+
+    # Display Portfolio Weights
+    st.subheader("Portfolio Weights")
+
+    # Let the user select how many top weights to display
+    max_num_weights = 30 if len(assets) >= 30 else len(assets)
+
+    # Let the user select how to group the weights
+    grouping_option = "Stocks"
+
+    # Prepare the allocation DataFrame
+    allocation_df = pd.DataFrame({"ISIN": weights.index, "Weight": weights.values})
+
+    # Extract list of ISINs from the data
+    data_isins = data.columns.tolist()
+
+    # Filter static_data to include only ISINs present in data
+    static_filtered = static_data[static_data["ISIN"].isin(data_isins)]
+
+    # Map ISINs to company names
+    allocation_df = allocation_df.merge(
+        static_filtered[["ISIN", "Company"]], on="ISIN", how="left"
     )
-    st.write(
-        f"Absolute sum of the weights and costs: {np.sum(np.abs(weights)) + (np.sum(np.abs(weights)) * fees * 12)}"
+
+    # Depending on grouping_option, create a column for grouping
+    if grouping_option == "Stocks":
+        allocation_df["Group"] = allocation_df["Company"]
+    elif grouping_option == "Region":
+        allocation_df["Group"] = allocation_df["Region"]
+    elif grouping_option == "Sector":
+        allocation_df["Group"] = allocation_df["GICSSectorName"]
+    elif grouping_option == "Country":
+        allocation_df["Group"] = allocation_df["Country"]
+    else:
+        allocation_df["Group"] = allocation_df["Company"]  # Default to Company
+
+    # Handle missing values in Group
+    allocation_df["Group"] = allocation_df["Group"].fillna("Unknown")
+
+
+    # Aggregate weights by Group
+    grouped_weights = allocation_df.groupby("Group")["Weight"].sum().reset_index()
+
+    # Sort the groups by weight
+    grouped_weights = grouped_weights.sort_values(by="Weight", ascending=False)
+
+    # Select top N groups
+    top_n = max_num_weights
+    top_groups = grouped_weights.head(top_n)
+    other_groups = grouped_weights.iloc[top_n:]
+    other_weight = other_groups["Weight"].sum()
+    if not other_groups.empty and other_weight != 0:
+        # Add 'Other' category using pd.concat()
+        other_row = pd.DataFrame({"Group": ["Other"], "Weight": [other_weight]})
+        top_groups = pd.concat([top_groups, other_row], ignore_index=True)
+
+    # Prepare data for pie chart
+    pie_data = top_groups.copy()
+
+    # Create the pie chart using Plotly
+    fig = px.pie(
+        pie_data,
+        values="Weight",
+        names="Group",
+        title="Portfolio Allocation",
+        hole=0.3,
     )
-    st.write(f"Smallest weight: {np.min(weights)}")
-    st.write(f"Biggest weight: {np.max(weights)}")
+    fig.update_traces(textinfo="percent")
+
+    st.plotly_chart(fig)
+
+    # Display the allocation DataFrame
+    # Format the weights as percentages
+    allocation_df["Weight"] = allocation_df["Weight"].apply(lambda x: f"{x:.2%}")
+    # Sort allocation_df by weight
+    allocation_df = allocation_df.sort_values(by="Weight", ascending=False).reset_index(drop=True)
+
+    # Display additional statistics
+    st.subheader("Additional Statistics:")
+    col4, col5, col6 = st.columns(3)
+    col4.metric("Total Weights Sum", f"{np.sum(weights):.2f}")
+    col5.metric("Total Absolute Weights Sum", f"{np.sum(np.abs(weights)):.2f}")
+    col6.metric("Number of Assets", f"{(weights != 0).sum()}")
+
+    # Display Minimum and Maximum Weights using st.metric
+    col7, col8 = st.columns(2)
+    col7.metric("Minimum Weight", f"{np.min(weights):.2%}")
+    col8.metric("Maximum Weight", f"{np.max(weights):.2%}")
+
+    # Display Expected Returns and Risks of Individual Assets
+    asset_returns = mean_returns * 12
+    asset_volatility = np.sqrt(np.diag(cov_matrix)) * np.sqrt(12)
+    assets_df = pd.DataFrame(
+        {
+            "Asset": data.columns,
+            "Expected Return": asset_returns,
+            "Volatility": asset_volatility,
+            "Weight": weights,
+        }
+    )
+
+    # Plot Expected Return vs Volatility
+    st.subheader("Asset Expected Returns vs Volatility")
+    fig2, ax2 = plt.subplots(figsize=(10, 6))
+    scatter = ax2.scatter(
+        assets_df["Volatility"],
+        assets_df["Expected Return"],
+        s=assets_df["Weight"].abs() * 5000,
+        alpha=0.6,
+    )
+    ax2.set_xlabel("Volatility (Annualized)")
+    ax2.set_ylabel("Expected Return (Annualized)")
+    ax2.set_title("Assets Risk vs Return (Bubble Size Indicates Portfolio Weight)")
+    st.pyplot(fig2)
+    plt.close()
 
 
 # -------------------------------

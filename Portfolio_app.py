@@ -434,9 +434,6 @@ def introduction_page():
     st.header("👥 About This Application")
     st.markdown(
         """
-    **Developed by:**  
-    The Portfolio Optimization team (Group 1). Our mission is to provide advanced yet user-friendly tools that facilitate informed investment decisions.
-
     **Purpose:**  
     This application aims to bridge the gap between complex financial theories and practical investment strategies, making portfolio optimization accessible to everyone.
 
@@ -454,14 +451,6 @@ def introduction_page():
     ---
     **Disclaimer:**  
     This application is intended for informational and educational purposes only. It does not constitute financial advice. Users should consult with a financial professional before making investment decisions.
-    """
-    )
-
-    # Footer (optional)
-    st.markdown(
-        """
-    ---
-    &copy; 2024 Group 1 of Master in Finance. All rights reserved.
     """
     )
 
